@@ -331,7 +331,9 @@ module.exports = function setupGroupFeatures(ctx) {
       if(d.indexOf('pub_pay_')===0){
         const m=d.match(/^pub_pay_(bkash|nagad)_(\d+)$/);
         if(!m)return;
-        return paymentContactChoice(q.message.chat.id,Number(m[2]),m[1]);
+        const r=await pool.query('SELECT * FROM subscription_plans WHERE id=$1',[Number(m[2])]);
+        const p=r.rows[0]; if(!p)return;
+        return customerPlan(q.message.chat.id,p,q.from);
       }
       if(d.indexOf('pub_contacttg_')===0 || d.indexOf('pub_contactwa_')===0){
         const via=d.indexOf('pub_contacttg_')===0?'telegram':'whatsapp';
