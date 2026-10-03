@@ -45,6 +45,23 @@ module.exports = function setupCustomerPortal(ctx) {
     );
   }
 
+  async function ownerPreview(chatId) {
+    return bot.sendMessage(chatId,
+      '👁 CUSTOMER SCREEN PREVIEW\n\n'+
+      '👤 MAHADI TOOLS CUSTOMER MENU\n\n'+
+      'স্বাগতম Customer 👋\n'+
+      '🛒 Orders: customer-এর নিজের order count\n'+
+      '⏳ Subscription: customer-এর current status\n\n'+
+      'নিচের অপশন থেকে বেছে নিন:',
+      {reply_markup:{inline_keyboard:[
+        [{text:'💎 Premium Plans',callback_data:'cust_preview_info'}],
+        [{text:'📦 My Orders',callback_data:'cust_preview_info'},{text:'⏳ My Subscription',callback_data:'cust_preview_info'}],
+        [{text:'🔄 Renew Premium',callback_data:'cust_preview_info'},{text:'🎫 Support',callback_data:'cust_preview_info'}],
+        [{text:'⬅️ Back to Owner Panel',callback_data:'main_panel'}]
+      ]}}
+    );
+  }
+
   async function showPlans(chatId) {
     const r=await pool.query("SELECT id,title,price_text FROM subscription_plans WHERE enabled=TRUE ORDER BY id");
     if(!r.rows.length) return bot.sendMessage(chatId,'💎 কোনো plan available নেই।');
@@ -233,7 +250,13 @@ module.exports = function setupCustomerPortal(ctx) {
   bot.on('callback_query', async q=>{
     const d=q.data||'';
     if(!d.startsWith('cust_')) return;
-    if(isOwnerUser(q.from)) return;
+    if(isOwnerUser(q.from)) {
+      await bot.answerCallbackQuery(q.id).catch(()=>{});
+      if(!q.message || q.message.chat.type!=='private') return;
+      if(d==='cust_preview_owner') return ownerPreview(q.message.chat.id);
+      if(d==='cust_preview_info') return bot.answerCallbackQuery(q.id,{text:'Preview only — customer account থেকে এগুলো live কাজ করবে.',show_alert:false}).catch(()=>{});
+      return;
+    }
     await bot.answerCallbackQuery(q.id).catch(()=>{});
     if(!q.message || q.message.chat.type!=='private') return;
     const chatId=q.message.chat.id;
