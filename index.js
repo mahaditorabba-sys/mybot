@@ -197,6 +197,7 @@ const mainKeyboard = {
     [{text:'🛡 Group Security',callback_data:'grp_security'},{text:'💎 Premium Plans',callback_data:'grp_plans'}],
     [{text:'🎫 Support Tickets',callback_data:'grp_tickets'},{text:'📊 Analytics',callback_data:'grp_analytics'}],
     [{text:'💼 Business Tools',callback_data:'biz_menu'},{text:'🧰 Admin Pack',callback_data:'plus_menu'}],
+    [{text:'👁 Customer Screen Preview',callback_data:'cust_preview_owner'}],
     [{text:'👥 User Tracker',callback_data:'user_tracker'},{text:'🆔 Owner Identity',callback_data:'owner_identity'}],
     [{text:'⚙️ Settings',callback_data:'settings_menu'},{text:'📡 Channel Status',callback_data:'check_channel'}],
     [{text:'🧾 Activity Logs',callback_data:'logs'},{text:'❓ Help',callback_data:'help'}],
