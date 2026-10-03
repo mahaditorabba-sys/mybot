@@ -20,7 +20,7 @@ module.exports = function setupBusinessFeatures(ctx) {
     }
     const payMigration = await getSetting('migration_payment_methods_bkash_nagad','false');
     if (payMigration !== 'true') {
-      await setSetting('payment_info','Payment methods: bKash / Nagad');
+      await setSetting('payment_info','💗 bKash\n🟠 Nagad');
       await setSetting('migration_payment_methods_bkash_nagad','true');
     }
     console.log('Business tools module ready');
@@ -47,10 +47,10 @@ module.exports = function setupBusinessFeatures(ctx) {
       '💼 BUSINESS TOOLS\n\n' +
       '🛒 Pending Orders: '+openOrders.rows[0].n+'\n' +
       '📱 Device Requests: '+openDevices.rows[0].n+'\n' +
-      '💳 Payment Info: '+(p ? 'SET' : 'NOT SET'),
+      '💳 Payment Info: '+(p ? 'SET' : 'NOT SET')+'\n💗 bKash  •  🟠 Nagad',
       {reply_markup:{inline_keyboard:[
         [{text:'🛒 Orders',callback_data:'biz_orders'},{text:'📱 Device Requests',callback_data:'biz_devices'}],
-        [{text:'💳 Payment Info',callback_data:'biz_payment'},{text:'📣 Broadcast',callback_data:'biz_broadcast'}],
+        [{text:'💗 bKash / 🟠 Nagad',callback_data:'biz_payment'},{text:'📣 Broadcast',callback_data:'biz_broadcast'}],
         [{text:'📈 Sales Summary',callback_data:'biz_sales'},{text:'⬅️ Main Panel',callback_data:'main_panel'}]
       ]}}
     );
