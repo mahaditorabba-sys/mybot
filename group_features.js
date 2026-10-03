@@ -76,6 +76,7 @@ module.exports = function setupGroupFeatures(ctx) {
       {command:'renew',description:'Renew premium'},
       {command:'ticket',description:'Open support ticket'},
       {command:'panel',description:'Owner Premium Control Panel'},
+      {command:'dashboard',description:'Owner business dashboard'},
       {command:'post',description:'Create channel post'},
       {command:'bindgroup',description:'Owner: connect group'},
       {command:'groupsettings',description:'Owner: group security panel'},
