@@ -276,6 +276,7 @@ const mainKeyboard = {
     [{text:'🤖 Custom Commands',callback_data:'commands_menu'},{text:'💬 Support Setup',callback_data:'support_menu'}],
     [{text:'🛡 Group Security',callback_data:'grp_security'},{text:'💎 Premium Plans',callback_data:'grp_plans'}],
     [{text:'🎫 Support Tickets',callback_data:'grp_tickets'},{text:'📊 Analytics',callback_data:'grp_analytics'}],
+    [{text:'🌐 Website Inbox',callback_data:'web_queue'},{text:'🔄 Website Sync',callback_data:'web_queue'}],
     [{text:'👥 User Tracker',callback_data:'user_tracker'},{text:'🆔 Owner Identity',callback_data:'owner_identity'}],
     [{text:'⚙️ Settings',callback_data:'settings_menu'},{text:'📡 Channel Status',callback_data:'check_channel'}],
     [{text:'🧾 Activity Logs',callback_data:'logs'},{text:'❓ Help',callback_data:'help'}]
