@@ -1,6 +1,6 @@
 {
   "name": "mahadi-tools-assistant",
-  "version": "5.0.0",
+  "version": "5.1.0",
   "description": "Mahadi Tools premium Telegram assistant",
   "main": "index.js",
   "scripts": {
