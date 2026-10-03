@@ -18,6 +18,11 @@ module.exports = function setupBusinessFeatures(ctx) {
     })) {
       await pool.query('INSERT INTO settings(key,value) VALUES($1,$2) ON CONFLICT(key) DO NOTHING',[k,v]);
     }
+    const payMigration = await getSetting('migration_payment_methods_bkash_nagad','false');
+    if (payMigration !== 'true') {
+      await setSetting('payment_info','Payment methods: bKash / Nagad');
+      await setSetting('migration_payment_methods_bkash_nagad','true');
+    }
     console.log('Business tools module ready');
   }
 
