@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const setupGroupFeatures = require('./group_features');
 const setupBusinessFeatures = require('./business_features');
 const setupAdminPlus = require('./admin_plus_features');
+const setupCustomerPortal = require('./customer_portal');
 
 const TOKEN = process.env.BOT_TOKEN;
 const OWNER_USERNAME = (process.env.OWNER_USERNAME || 'Mahadihasanrony11').replace(/^@/, '').toLowerCase();
@@ -96,6 +97,11 @@ async function initDb() {
   };
   for (const [k,v] of Object.entries(defaults)) {
     await pool.query('INSERT INTO settings(key,value) VALUES($1,$2) ON CONFLICT(key) DO NOTHING',[k,v]);
+  }
+  const savedOwner = await pool.query("SELECT value FROM settings WHERE key='owner_id'");
+  const savedOwnerId = savedOwner.rows[0]?.value;
+  if (savedOwnerId && /^\\d+$/.test(String(savedOwnerId))) {
+    ownerId = Number(savedOwnerId);
   }
 }
 initDb().then(()=>console.log('Database ready')).catch(e=>console.error('DB init error',e));
@@ -322,7 +328,7 @@ bot.onText(/^\/status(?:@\w+)?$/, async msg=>{
 });
 
 bot.on('callback_query', async q=>{
-  if (q.data && (q.data.startsWith('pub_') || q.data.startsWith('biz_') || q.data.startsWith('plus_'))) return;
+  if (q.data && (q.data.startsWith('pub_') || q.data.startsWith('biz_') || q.data.startsWith('plus_') || q.data.startsWith('cust_'))) return;
   const msg=q.message;
   if (q.from) await trackUser(q.from,{chatId:msg?.chat?.id,chatType:msg?.chat?.type});
   if(!msg || !isOwnerUser(q.from)) return bot.answerCallbackQuery(q.id,{text:'Owner only',show_alert:true});
@@ -630,6 +636,10 @@ setupBusinessFeatures({
 
 setupAdminPlus({
   bot, pool, isOwnerUser, getSetting, setSetting, trackUser
+});
+
+setupCustomerPortal({
+  bot, pool, isOwnerUser, getSetting, trackUser, OWNER_USERNAME
 });
 
 bot.on('polling_error',err=>console.error('Polling error:',err.message));
