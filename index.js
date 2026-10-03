@@ -23,7 +23,7 @@ app.get('/health', (_, res) => res.json({ ok: true, bot: 'Mahadi Tools Assistant
 app.listen(PORT, () => console.log('Health server listening on', PORT));
 
 async function initDb() {
-  await pool.query(\`
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
@@ -81,7 +81,7 @@ async function initDb() {
       chat_id BIGINT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
-  \`);
+  `);
   const defaults = {
     auto_pin: 'false',
     silent_post: 'false',
@@ -112,8 +112,8 @@ async function getSetting(key, fallback='') {
   return r.rows[0]?.value ?? fallback;
 }
 async function setSetting(key,value) {
-  await pool.query(\`INSERT INTO settings(key,value,updated_at) VALUES($1,$2,NOW())
-    ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=NOW()\`,[key,String(value)]);
+  await pool.query(`INSERT INTO settings(key,value,updated_at) VALUES($1,$2,NOW())
+    ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=NOW()`,[key,String(value)]);
 }
 async function logAction(action,details='') {
   try { await pool.query('INSERT INTO activity_logs(action,details) VALUES($1,$2)',[action,details]); } catch {}
@@ -575,8 +575,8 @@ bot.on('message', async msg=>{
     return bot.sendMessage(chatId,'/'+cmd+' দিলে bot কী reply দেবে সেটা লিখুন।');
   }
   if(s.mode==='cmd_response') {
-    await pool.query(\`INSERT INTO custom_commands(command,response,enabled) VALUES($1,$2,TRUE)
-      ON CONFLICT(command) DO UPDATE SET response=EXCLUDED.response,enabled=TRUE\`,[s.command,msg.text||'']);
+    await pool.query(`INSERT INTO custom_commands(command,response,enabled) VALUES($1,$2,TRUE)
+      ON CONFLICT(command) DO UPDATE SET response=EXCLUDED.response,enabled=TRUE`,[s.command,msg.text||'']);
     await logAction('custom_command','/'+s.command); sessions.delete(chatId);
     return bot.sendMessage(chatId,'✅ /'+s.command+' command saved.');
   }
