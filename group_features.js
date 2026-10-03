@@ -69,6 +69,9 @@ module.exports = function setupGroupFeatures(ctx) {
       {command:'business',description:'Owner: orders and business tools'},
       {command:'orders',description:'Owner: view recent orders'},
       {command:'devicechange',description:'Request a device change'},
+      {command:'proof',description:'Submit payment proof for an order'},
+      {command:'adminpack',description:'Owner: premium admin tools'},
+      {command:'usersearch',description:'Owner: search a tracked user'},
       {command:'backup',description:'Owner: export settings'}
     ]});
   }
@@ -207,6 +210,8 @@ module.exports = function setupGroupFeatures(ctx) {
       const note=await getSetting('maintenance_note','মেইনটেন্যান্সের কাজ চলছে।');
       return bot.sendMessage(msg.chat.id,st==='online'?'🟢 Mahadi Tools service status: ONLINE':'🛠 Service Status: '+st.toUpperCase()+'\n\n'+note,{reply_to_message_id:msg.message_id});
     }
+    const faq=await pool.query('SELECT question,answer FROM faqs WHERE enabled=TRUE ORDER BY length(question) DESC').catch(()=>({rows:[]}));
+    for (const x of faq.rows) if (t.indexOf(String(x.question).toLowerCase())>=0) return bot.sendMessage(msg.chat.id,x.answer,{reply_to_message_id:msg.message_id});
     const r=await pool.query('SELECT keyword,response FROM keyword_replies WHERE enabled=TRUE ORDER BY length(keyword) DESC');
     for (const x of r.rows) if (t.indexOf(x.keyword.toLowerCase())>=0) return bot.sendMessage(msg.chat.id,x.response,{reply_to_message_id:msg.message_id});
     const mention=me&&me.username?'@'+me.username.toLowerCase():'';
@@ -271,7 +276,7 @@ module.exports = function setupGroupFeatures(ctx) {
         ).catch(()=>({rows:[]}));
         const oid=o.rows[0]?.id;
         await ownerAlert('🛒 NEW ORDER'+(oid?' #'+oid:'')+'\n\nUser: '+q.from.id+' '+(q.from.username?'@'+q.from.username:'')+'\nPlan: '+p.title+'\nPrice: '+p.price_text+'\nContact: Telegram');
-        return bot.sendMessage(q.message.chat.id,'✅ Order'+(oid?' #'+oid:'')+' তৈরি হয়েছে। নিচের button দিয়ে Telegram inbox খুলুন।',{reply_markup:{inline_keyboard:[[{text:'✈️ Open Telegram Inbox',url:'https://t.me/'+tg}]]}});
+        return bot.sendMessage(q.message.chat.id,'✅ Order'+(oid?' #'+oid:'')+' তৈরি হয়েছে।\n'+(oid?'Payment screenshot দিতে: /proof '+oid+'\n':'')+'নিচের button দিয়ে Telegram inbox খুলুন।',{reply_markup:{inline_keyboard:[[{text:'✈️ Open Telegram Inbox',url:'https://t.me/'+tg}]]}});
       }
       if(d.indexOf('pub_waplan_')===0){
         const id=Number(d.replace('pub_waplan_',''));
@@ -286,7 +291,7 @@ module.exports = function setupGroupFeatures(ctx) {
         const oid=o.rows[0]?.id;
         await ownerAlert('🛒 NEW ORDER'+(oid?' #'+oid:'')+'\n\nUser: '+q.from.id+' '+(q.from.username?'@'+q.from.username:'')+'\nPlan: '+p.title+'\nPrice: '+p.price_text+'\nContact: WhatsApp');
         const text=encodeURIComponent('Mahadi Tools Premium order\nPlan: '+p.title+'\nPrice: '+p.price_text+(oid?'\nOrder ID: #'+oid:''));
-        return bot.sendMessage(q.message.chat.id,'✅ Order'+(oid?' #'+oid:'')+' তৈরি হয়েছে। নিচের button দিয়ে WhatsApp খুলুন।',{reply_markup:{inline_keyboard:[[{text:'📱 Open WhatsApp',url:'https://wa.me/'+wa+'?text='+text}]]}});
+        return bot.sendMessage(q.message.chat.id,'✅ Order'+(oid?' #'+oid:'')+' তৈরি হয়েছে।\n'+(oid?'Payment screenshot দিতে: /proof '+oid+'\n':'')+'নিচের button দিয়ে WhatsApp খুলুন।',{reply_markup:{inline_keyboard:[[{text:'📱 Open WhatsApp',url:'https://wa.me/'+wa+'?text='+text}]]}});
       }
       if(d==='pub_payment'){
         const info=await getSetting('payment_info','');
