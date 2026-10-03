@@ -6,6 +6,7 @@ const setupBusinessFeatures = require('./business_features');
 const setupAdminPlus = require('./admin_plus_features');
 const setupCustomerPortal = require('./customer_portal');
 const setupOwnerDashboard = require('./owner_dashboard');
+const setupAdvancedFeatures = require('./advanced_features');
 
 const TOKEN = process.env.BOT_TOKEN;
 const OWNER_USERNAME = (process.env.OWNER_USERNAME || 'Mahadihasanrony11').replace(/^@/, '').toLowerCase();
@@ -24,8 +25,8 @@ const sessions = new Map();
 let ownerId = null;
 
 
-app.get('/', (_, res) => res.send('Mahadi Tools Assistant v5.1 is running'));
-app.get('/health', (_, res) => res.json({ ok: true, bot: 'Mahadi Tools Assistant', version: '5.1.0' }));
+app.get('/', (_, res) => res.send('Mahadi Tools Assistant v5.2 is running'));
+app.get('/health', (_, res) => res.json({ ok: true, bot: 'Mahadi Tools Assistant', version: '5.2.0' }));
 app.listen(PORT, () => console.log('Health server listening on', PORT));
 
 async function initDb() {
@@ -331,7 +332,7 @@ bot.onText(/^\/status(?:@\w+)?$/, async msg=>{
 });
 
 bot.on('callback_query', async q=>{
-  if (q.data && (q.data.startsWith('pub_') || q.data.startsWith('biz_') || q.data.startsWith('plus_') || q.data.startsWith('cust_') || q.data.startsWith('dash_'))) return;
+  if (q.data && (q.data.startsWith('pub_') || q.data.startsWith('biz_') || q.data.startsWith('plus_') || q.data.startsWith('cust_') || q.data.startsWith('dash_') || q.data.startsWith('adv_'))) return;
   const msg=q.message;
   if (q.from) await trackUser(q.from,{chatId:msg?.chat?.id,chatType:msg?.chat?.type});
   if(!msg || !isOwnerUser(q.from)) return bot.answerCallbackQuery(q.id,{text:'Owner only',show_alert:true});
@@ -649,5 +650,9 @@ setupOwnerDashboard({
   bot, pool, isOwnerUser, getSetting, setSetting, OWNER_USERNAME, CHANNEL
 });
 
+setupAdvancedFeatures({
+  bot, pool, isOwnerUser, getSetting, setSetting
+});
+
 bot.on('polling_error',err=>console.error('Polling error:',err.message));
-console.log('Mahadi Tools Assistant v5.1 booted');
+console.log('Mahadi Tools Assistant v5.2 booted');
