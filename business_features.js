@@ -26,6 +26,19 @@ module.exports = function setupBusinessFeatures(ctx) {
     console.log('Business tools module ready');
   }
 
+  function durationDaysFromCode(code,title) {
+    const c=String(code||'').toLowerCase();
+    if(c==='15d') return 15;
+    if(c==='1m') return 30;
+    if(c==='2m') return 60;
+    if(c==='1y') return 365;
+    const t=String(title||'').toLowerCase();
+    if(t.includes('15 day')) return 15;
+    if(t.includes('2 month')) return 60;
+    if(t.includes('1 year') || t.includes('12 month')) return 365;
+    return 30;
+  }
+
   async function ownerId() {
     const v = await getSetting('owner_id','');
     return v ? Number(v) : null;
@@ -183,8 +196,25 @@ module.exports = function setupBusinessFeatures(ctx) {
         [id,status]
       );
       const o=r.rows[0]; if(!o)return;
+      if(status==='activated'){
+        const plan=await pool.query('SELECT code,title FROM subscription_plans WHERE id=$1',[o.plan_id]).catch(()=>({rows:[]}));
+        const days=durationDaysFromCode(plan.rows[0]?.code,o.plan_title);
+        await pool.query(
+          "INSERT INTO subscriptions(order_id,user_id,username,plan_title,expires_at,status) "+
+          "VALUES($1,$2,$3,$4,NOW()+($5||' days')::interval,'active') "+
+          "ON CONFLICT(order_id) DO UPDATE SET status='active'",
+          [o.id,o.user_id,o.username,o.plan_title,String(days)]
+        ).catch(()=>{});
+      }
       try {
-        if (o.chat_id) await bot.sendMessage(Number(o.chat_id),'🛒 Order #'+id+' status: '+status.toUpperCase(),{reply_to_message_id:o.message_id||undefined});
+        if (o.chat_id) await bot.sendMessage(
+          Number(o.chat_id),
+          '🛒 Order #'+id+' status: '+status.toUpperCase(),
+          {reply_to_message_id:o.message_id||undefined,reply_markup:{inline_keyboard:[[
+            {text:'👤 Customer Menu',callback_data:'cust_menu'},
+            {text:'⏳ My Subscription',callback_data:'cust_sub'}
+          ]]}}
+        );
       } catch {}
       return bot.sendMessage(chatId,'✅ Order #'+id+' → '+status.toUpperCase());
     }
