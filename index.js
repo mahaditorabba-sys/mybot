@@ -1,6 +1,7 @@
 const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
 const { Pool } = require('pg');
+const setupGroupFeatures = require('./group_features');
 
 const TOKEN = process.env.BOT_TOKEN;
 const OWNER_USERNAME = (process.env.OWNER_USERNAME || 'Mahadihasanrony11').replace(/^@/, '').toLowerCase();
@@ -314,6 +315,7 @@ bot.onText(/^\/status(?:@\w+)?$/, async msg=>{
 });
 
 bot.on('callback_query', async q=>{
+  if (q.data && q.data.startsWith('pub_')) return;
   const msg=q.message;
   if (q.from) await trackUser(q.from,{chatId:msg?.chat?.id,chatType:msg?.chat?.type});
   if(!msg || !isOwnerUser(q.from)) return bot.answerCallbackQuery(q.id,{text:'Owner only',show_alert:true});
@@ -608,6 +610,11 @@ setInterval(async ()=>{
     }
   } catch(e){ console.error('Schedule poll error',e.message); }
 },30000);
+
+setupGroupFeatures({
+  bot, pool, isOwnerUser, getSetting, setSetting, logAction, trackUser,
+  OWNER_USERNAME, CHANNEL, TOKEN
+});
 
 bot.on('polling_error',err=>console.error('Polling error:',err.message));
 console.log('Mahadi Tools Assistant v2 booted');
