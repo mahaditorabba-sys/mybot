@@ -174,8 +174,8 @@ module.exports = function setupAdminPlus(ctx) {
     const gid=await groupId();
     if (!gid) return {ok:false,msg:'আগে Group bind করতে হবে।'};
     await pool.query(
-      "INSERT INTO warnings(chat_id,user_id,reason) VALUES($1,$2,$3)",
-      [gid,userId,'Owner warning']
+      "INSERT INTO moderation_events(chat_id,user_id,action,reason) VALUES($1,$2,$3,$4)",
+      [gid,userId,'warn','Owner warning']
     ).catch(()=>{});
     try { await bot.sendMessage(gid,'⚠️ Warning for user ID '+userId+'. Group rules follow করুন।'); } catch {}
     return {ok:true,msg:'⚠️ Warning saved.'};
