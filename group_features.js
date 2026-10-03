@@ -26,6 +26,11 @@ module.exports = function setupGroupFeatures(ctx) {
     for (const k of Object.keys(defaults)) {
       await pool.query('INSERT INTO settings(key,value) VALUES($1,$2) ON CONFLICT(key) DO NOTHING',[k,defaults[k]]);
     }
+    const waMigration = await getSetting('migration_whatsapp_18147960771','false');
+    if (waMigration !== 'true') {
+      await setSetting('contact_whatsapp','18147960771');
+      await setSetting('migration_whatsapp_18147960771','true');
+    }
     const plans = [
       ['15d','15 Days Premium','50৳','15 দিনের Mahadi Tools Premium access'],
       ['1m','1 Month Premium','100৳','১ মাস Mahadi Tools Premium access'],
