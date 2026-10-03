@@ -69,10 +69,14 @@ module.exports = function setupGroupFeatures(ctx) {
     await tg('setMyShortDescription',{short_description:'Mahadi Tools • Channel • Group • Support'});
     await tg('setMyDescription',{description:'Official Mahadi Tools channel, group security and smart support assistant.'});
     await tg('setMyCommands',{commands:[
+      {command:'start',description:'Open Mahadi Tools menu'},
+      {command:'plans',description:'View premium plans'},
+      {command:'myorders',description:'View your orders'},
+      {command:'mysubscription',description:'View subscription and expiry'},
+      {command:'renew',description:'Renew premium'},
+      {command:'ticket',description:'Open support ticket'},
       {command:'panel',description:'Owner Premium Control Panel'},
       {command:'post',description:'Create channel post'},
-      {command:'plans',description:'View premium plans'},
-      {command:'ticket',description:'Open support ticket'},
       {command:'bindgroup',description:'Owner: connect group'},
       {command:'groupsettings',description:'Owner: group security panel'},
       {command:'analytics',description:'Owner: analytics'},
