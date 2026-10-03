@@ -135,26 +135,66 @@ module.exports = function setupGroupFeatures(ctx) {
   }
 
   async function customerPlan(chatId, plan, user) {
+    const wa=(await getSetting('contact_whatsapp','')).replace(/[^0-9]/g,'');
+    const kb=[];
+    if(wa) kb.push([{text:'📱 WhatsApp',callback_data:'pub_via_whatsapp_'+plan.id}]);
+    kb.push([{text:'✈️ Telegram',callback_data:'pub_via_telegram_'+plan.id}]);
     return bot.sendMessage(chatId,
-      '💎 '+plan.title+'\n💰 '+plan.price_text+'\n\n'+(plan.details||'')+'\n\nPayment method সিলেক্ট করুন।\n🔒 bKash/Nagad-এর কোনো number bot-এ দেখানো হবে না।',
+      '💎 '+plan.title+'\n💰 '+plan.price_text+'\n\n'+(plan.details||'')+
+      '\n\nকোথায় message দিতে চান?\nতারপর bKash/Nagad সিলেক্ট করলে ready-made message খুলবে।',
+      {reply_markup:{inline_keyboard:kb}}
+    );
+  }
+
+  async function checkoutMethodLinks(chatId, planId, via, user) {
+    const r=await pool.query('SELECT * FROM subscription_plans WHERE id=$1',[planId]);
+    const p=r.rows[0]; if(!p)return;
+
+    const o=await pool.query(
+      'INSERT INTO sales_orders(user_id,username,chat_id,message_id,plan_id,plan_title,price_text,contact_method) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id',
+      [user.id,user.username||null,chatId,null,p.id,p.title,p.price_text,via]
+    ).catch(()=>({rows:[]}));
+    const oid=o.rows[0]?.id;
+
+    const makeText=(method)=>
+      'Assalamu Alaikum 👋\n'+
+      'Mahadi Tools Premium নিতে চাই।\n'+
+      (oid?'Order ID: #'+oid+'\n':'')+
+      'Plan: '+p.title+'\n'+
+      'Price: '+p.price_text+'\n'+
+      'Payment: '+method+'\n\n'+
+      'Payment details দিন।';
+
+    const bkashText=makeText('bKash');
+    const nagadText=makeText('Nagad');
+    let bkashUrl='',nagadUrl='';
+
+    if(via==='whatsapp'){
+      const wa=(await getSetting('contact_whatsapp','')).replace(/[^0-9]/g,'');
+      if(!wa)return bot.sendMessage(chatId,'📱 WhatsApp এখন available নয়। Telegram ব্যবহার করুন।');
+      bkashUrl='https://wa.me/'+wa+'?text='+encodeURIComponent(bkashText);
+      nagadUrl='https://wa.me/'+wa+'?text='+encodeURIComponent(nagadText);
+    } else {
+      const tg=(await getSetting('contact_telegram',OWNER_USERNAME)).replace(/^@/,'');
+      bkashUrl='https://t.me/'+tg+'?text='+encodeURIComponent(bkashText);
+      nagadUrl='https://t.me/'+tg+'?text='+encodeURIComponent(nagadText);
+    }
+
+    await ownerAlert(
+      '🛒 CHECKOUT STARTED'+(oid?' #'+oid:'')+'\n\nUser: '+user.id+' '+(user.username?'@'+user.username:'')+
+      '\nPlan: '+p.title+'\nPrice: '+p.price_text+'\nContact: '+(via==='whatsapp'?'WhatsApp':'Telegram')+
+      '\nPayment method customer message-এ থাকবে।'
+    );
+
+    return bot.sendMessage(chatId,
+      (via==='whatsapp'?'📱 WhatsApp':'✈️ Telegram')+' selected'+(oid?' • Order #'+oid:'')+
+      '\n\nPayment method সিলেক্ট করুন। Button চাপলেই ready-made message খুলবে—শুধু Send করবেন।',
       {reply_markup:{inline_keyboard:[
-        [{text:'💗 bKash',callback_data:'pub_pay_bkash_'+plan.id},{text:'🟠 Nagad',callback_data:'pub_pay_nagad_'+plan.id}]
+        [{text:'💗 bKash',url:bkashUrl},{text:'🟠 Nagad',url:nagadUrl}]
       ]}}
     );
   }
 
-  async function paymentContactChoice(chatId, planId, method) {
-    const r=await pool.query('SELECT * FROM subscription_plans WHERE id=$1',[planId]);
-    const p=r.rows[0]; if(!p)return;
-    const wa=(await getSetting('contact_whatsapp','')).replace(/[^0-9]/g,'');
-    const kb=[];
-    if(wa) kb.push([{text:'📱 WhatsApp',callback_data:'pub_contactwa_'+method+'_'+p.id}]);
-    kb.push([{text:'✈️ Telegram',callback_data:'pub_contacttg_'+method+'_'+p.id}]);
-    return bot.sendMessage(chatId,
-      (method==='bkash'?'💗 bKash':'🟠 Nagad')+' selected.\n\nআগে Owner-এর সাথে কোথায় message দিতে চান?',
-      {reply_markup:{inline_keyboard:kb}}
-    );
-  }
   async function settingsPanel(chatId) {
     const keys = ['group_link_filter','group_flood_guard','group_welcome','group_support','group_lockdown','nsfw_guard'];
     const v = {};
@@ -282,6 +322,11 @@ module.exports = function setupGroupFeatures(ctx) {
         const r=await pool.query('SELECT * FROM subscription_plans WHERE id=$1',[id]);
         const p=r.rows[0];
         if(p)return customerPlan(q.message.chat.id,p,q.from);
+      }
+      if(d.indexOf('pub_via_')===0){
+        const m=d.match(/^pub_via_(whatsapp|telegram)_(\d+)$/);
+        if(!m)return;
+        return checkoutMethodLinks(q.message.chat.id,Number(m[2]),m[1],q.from);
       }
       if(d.indexOf('pub_pay_')===0){
         const m=d.match(/^pub_pay_(bkash|nagad)_(\d+)$/);
