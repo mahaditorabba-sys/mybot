@@ -20,7 +20,8 @@ module.exports = function setupGroupFeatures(ctx) {
     const defaults = {
       primary_group_id: '', group_link_filter: 'true', group_flood_guard: 'true',
       group_welcome: 'true', group_support: 'true', group_lockdown: 'false',
-      bad_words: '', nsfw_guard: 'true'
+      bad_words: '', nsfw_guard: 'true',
+      contact_telegram: OWNER_USERNAME, contact_whatsapp: ''
     };
     for (const k of Object.keys(defaults)) {
       await pool.query('INSERT INTO settings(key,value) VALUES($1,$2) ON CONFLICT(key) DO NOTHING',[k,defaults[k]]);
@@ -94,8 +95,40 @@ module.exports = function setupGroupFeatures(ctx) {
   async function plans(chatId,replyId) {
     const r = await pool.query('SELECT id,title,price_text FROM subscription_plans WHERE enabled=TRUE ORDER BY id');
     const kb = r.rows.map(function(x){return [{text:x.title+' — '+x.price_text,callback_data:'pub_plan_'+x.id}];});
-    kb.push([{text:'💬 Contact Owner',url:'https://t.me/'+OWNER_USERNAME}]);
     return bot.sendMessage(chatId,'💎 MAHADI TOOLS PREMIUM PLANS\n\nPlan সিলেক্ট করুন:',{reply_to_message_id:replyId,reply_markup:{inline_keyboard:kb}});
+  }
+
+  async function plansAdmin(chatId) {
+    const r = await pool.query('SELECT id,title,price_text FROM subscription_plans ORDER BY id');
+    const rows = r.rows.map(function(x){
+      return [
+        {text:'✏️ '+x.title+' — '+x.price_text,callback_data:'grp_planedit_'+x.id}
+      ];
+    });
+    rows.push([{text:'👁 Customer Preview',callback_data:'grp_planpreview'}]);
+    rows.push([{text:'📱 Set WhatsApp',callback_data:'grp_setwa'},{text:'✈️ Set Telegram',callback_data:'grp_settg'}]);
+    const wa=await getSetting('contact_whatsapp','');
+    const tg=await getSetting('contact_telegram',OWNER_USERNAME);
+    return bot.sendMessage(chatId,
+      '💎 PREMIUM SALES SETTINGS\n\n'+
+      'এখান থেকে plan-এর price/details edit করতে পারবেন।\n\n'+
+      '✈️ Telegram: @'+(tg||OWNER_USERNAME)+'\n'+
+      '📱 WhatsApp: '+(wa||'Not set'),
+      {reply_markup:{inline_keyboard:rows}}
+    );
+  }
+
+  async function customerPlan(chatId, plan, user) {
+    const tg=(await getSetting('contact_telegram',OWNER_USERNAME)).replace(/^@/,'');
+    const wa=(await getSetting('contact_whatsapp','')).replace(/[^0-9]/g,'');
+    const text='Mahadi Tools Premium order%0APlan: '+encodeURIComponent(plan.title)+'%0APrice: '+encodeURIComponent(plan.price_text);
+    const kb=[];
+    if(wa) kb.push([{text:'📱 WhatsApp',url:'https://wa.me/'+wa+'?text='+text}]);
+    kb.push([{text:'✈️ Telegram Inbox',callback_data:'pub_tgplan_'+plan.id}]);
+    return bot.sendMessage(chatId,
+      '💎 '+plan.title+'\n💰 '+plan.price_text+'\n\n'+(plan.details||'')+'\n\nকোথায় message দিতে চান?',
+      {reply_markup:{inline_keyboard:kb}}
+    );
   }
   async function settingsPanel(chatId) {
     const keys = ['group_link_filter','group_flood_guard','group_welcome','group_support','group_lockdown','nsfw_guard'];
@@ -215,13 +248,47 @@ module.exports = function setupGroupFeatures(ctx) {
 
   bot.on('callback_query',async function(q){
     const d=q.data||'';
-    if(d.indexOf('pub_')===0){await bot.answerCallbackQuery(q.id).catch(function(){});if(d.indexOf('pub_plan_')===0){const id=Number(d.replace('pub_plan_',''));const r=await pool.query('SELECT * FROM subscription_plans WHERE id=$1',[id]);const p=r.rows[0];if(p)return bot.sendMessage(q.message.chat.id,'💎 '+p.title+'\n💰 '+p.price_text+'\n\n'+(p.details||''),{reply_markup:{inline_keyboard:[[{text:'💬 Buy / Contact Owner',url:'https://t.me/'+OWNER_USERNAME}]]}});}return;}
+    if(d.indexOf('pub_')===0){
+      await bot.answerCallbackQuery(q.id).catch(function(){});
+      if(d.indexOf('pub_plan_')===0){
+        const id=Number(d.replace('pub_plan_',''));
+        const r=await pool.query('SELECT * FROM subscription_plans WHERE id=$1',[id]);
+        const p=r.rows[0];
+        if(p)return customerPlan(q.message.chat.id,p,q.from);
+      }
+      if(d.indexOf('pub_tgplan_')===0){
+        const id=Number(d.replace('pub_tgplan_',''));
+        const r=await pool.query('SELECT * FROM subscription_plans WHERE id=$1',[id]);
+        const p=r.rows[0]; if(!p)return;
+        const tg=(await getSetting('contact_telegram',OWNER_USERNAME)).replace(/^@/,'');
+        await ownerAlert('💎 NEW PLAN INTEREST\n\nUser: '+q.from.id+' '+(q.from.username?'@'+q.from.username:'')+'\nPlan: '+p.title+'\nPrice: '+p.price_text);
+        return bot.sendMessage(q.message.chat.id,'✅ আপনার plan choice Owner-কে জানানো হয়েছে। নিচের button দিয়ে Telegram inbox খুলুন।',{reply_markup:{inline_keyboard:[[{text:'✈️ Open Telegram Inbox',url:'https://t.me/'+tg}]]}});
+      }
+      return;
+    }
     if(d.indexOf('grp_')!==0)return;if(!isOwnerUser(q.from))return;await saveOwner(q.from);await bot.answerCallbackQuery(q.id).catch(function(){});const chatId=q.message.chat.id;
     const map={grp_link:'group_link_filter',grp_flood:'group_flood_guard',grp_welcome:'group_welcome',grp_support:'group_support',grp_lockdown:'group_lockdown'};
     if(map[d]){const cur=await getSetting(map[d],'false');await setSetting(map[d],cur==='true'?'false':'true');return settingsPanel(chatId);}
     if(d==='grp_security')return settingsPanel(chatId);
     if(d==='grp_nsfw')return bot.sendMessage(chatId,process.env.NSFW_API_URL?'🔞 AI Media Guard connected.':'🔞 18+ media pipeline ready, কিন্তু real AI scan চালাতে moderation API key/endpoint লাগবে।');
-    if(d==='grp_plans')return plans(chatId);if(d==='grp_analytics')return bot.sendMessage(chatId,await analytics());
+    if(d==='grp_plans')return plansAdmin(chatId);
+    if(d==='grp_planpreview')return plans(chatId);
+    if(d.indexOf('grp_planedit_')===0){
+      const id=Number(d.replace('grp_planedit_',''));
+      const r=await pool.query('SELECT * FROM subscription_plans WHERE id=$1',[id]);
+      const p=r.rows[0]; if(!p)return;
+      ownerSessions.set(q.from.id,{mode:'edit_plan',planId:id});
+      return bot.sendMessage(chatId,'✏️ Plan edit করুন এই format-এ:\n\nName | Price | Details\n\nCurrent:\n'+p.title+' | '+p.price_text+' | '+(p.details||''));
+    }
+    if(d==='grp_setwa'){
+      ownerSessions.set(q.from.id,{mode:'set_whatsapp'});
+      return bot.sendMessage(chatId,'📱 WhatsApp number country code সহ দিন।\nExample: 968XXXXXXXX\n\nবন্ধ করতে: off');
+    }
+    if(d==='grp_settg'){
+      ownerSessions.set(q.from.id,{mode:'set_telegram'});
+      return bot.sendMessage(chatId,'✈️ Telegram username দিন।\nExample: @Mahadihasanrony11');
+    }
+    if(d==='grp_analytics')return bot.sendMessage(chatId,await analytics());
     if(d==='grp_tickets'){const r=await pool.query("SELECT id,user_id,username FROM support_tickets WHERE status='open' ORDER BY id DESC LIMIT 10");if(!r.rows.length)return bot.sendMessage(chatId,'🎫 কোনো open ticket নেই।');return bot.sendMessage(chatId,'🎫 OPEN TICKETS',{reply_markup:{inline_keyboard:r.rows.map(function(x){return [{text:'#'+x.id+' • '+(x.username?'@'+x.username:x.user_id),callback_data:'grp_view_'+x.id}];})}});}
     if(d.indexOf('grp_view_')===0){const id=Number(d.replace('grp_view_',''));const r=await pool.query('SELECT * FROM support_tickets WHERE id=$1',[id]);const t=r.rows[0];if(t)return bot.sendMessage(chatId,'🎫 Ticket #'+t.id+'\nUser: '+t.user_id+' '+(t.username?'@'+t.username:'')+'\n\n'+t.text,{reply_markup:{inline_keyboard:[[{text:'💬 Reply',callback_data:'grp_reply_'+id},{text:'✅ Close',callback_data:'grp_close_'+id}]]}});}
     if(d.indexOf('grp_reply_')===0){const id=Number(d.replace('grp_reply_',''));ownerSessions.set(q.from.id,{ticketId:id});return bot.sendMessage(chatId,'💬 Ticket #'+id+' reply লিখুন।');}
@@ -231,7 +298,28 @@ module.exports = function setupGroupFeatures(ctx) {
   bot.on('message',async function(msg){
     if(msg.from){await saveOwner(msg.from).catch(function(){});await trackUser(msg.from,{chatId:msg.chat&&msg.chat.id,chatType:msg.chat&&msg.chat.type}).catch(function(){});}
     if(msg.from&&isOwnerUser(msg.from)&&msg.chat.type==='private'&&ownerSessions.has(msg.from.id)&&msg.text&&!msg.text.startsWith('/')){
-      const s=ownerSessions.get(msg.from.id);ownerSessions.delete(msg.from.id);const r=await pool.query('SELECT * FROM support_tickets WHERE id=$1',[s.ticketId]);const t=r.rows[0];if(!t)return;
+      const s=ownerSessions.get(msg.from.id);
+      if(s.mode==='edit_plan'){
+        const p=msg.text.split('|').map(function(x){return x.trim();});
+        if(p.length<3)return bot.sendMessage(msg.chat.id,'Format ঠিক দিন: Name | Price | Details');
+        await pool.query('UPDATE subscription_plans SET title=$2,price_text=$3,details=$4 WHERE id=$1',[s.planId,p[0],p[1],p.slice(2).join(' | ')]);
+        ownerSessions.delete(msg.from.id);
+        return bot.sendMessage(msg.chat.id,'✅ Plan updated.');
+      }
+      if(s.mode==='set_whatsapp'){
+        const raw=msg.text.trim();
+        await setSetting('contact_whatsapp',raw.toLowerCase()==='off'?'':raw.replace(/[^0-9]/g,''));
+        ownerSessions.delete(msg.from.id);
+        return bot.sendMessage(msg.chat.id,'✅ WhatsApp contact updated.');
+      }
+      if(s.mode==='set_telegram'){
+        const user=msg.text.trim().replace(/^@/,'');
+        await setSetting('contact_telegram',user);
+        ownerSessions.delete(msg.from.id);
+        return bot.sendMessage(msg.chat.id,'✅ Telegram contact updated: @'+user);
+      }
+      ownerSessions.delete(msg.from.id);
+      const r=await pool.query('SELECT * FROM support_tickets WHERE id=$1',[s.ticketId]);const t=r.rows[0];if(!t)return;
       await pool.query('UPDATE support_tickets SET owner_reply=$2 WHERE id=$1',[t.id,msg.text]);try{await bot.sendMessage(Number(t.chat_id),'💬 Owner reply for Ticket #'+t.id+'\n\n'+msg.text,{reply_to_message_id:t.message_id||undefined});}catch{}return bot.sendMessage(msg.chat.id,'✅ Reply sent.');
     }
     if(!msg.chat|| (msg.chat.type!=='group'&&msg.chat.type!=='supergroup') || !(await isBound(msg.chat.id)))return;
