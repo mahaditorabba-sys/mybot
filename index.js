@@ -311,7 +311,8 @@ function parseOmanSchedule(input) {
 }
 
 bot.onText(/^\/start(?:@\w+)?$/, async msg=>{
-  if (!isOwnerMsg(msg)) return bot.sendMessage(msg.chat.id,'🔒 Private bot — Owner only.');
+  if (!isOwnerMsg(msg)) return;
+  await setSetting('owner_id',String(msg.from.id)).catch(()=>{});
   await bot.sendMessage(msg.chat.id,'✅ Mahadi Tools Assistant Premium চালু হয়েছে।\n\n/panel দিয়ে Control Panel খুলুন।');
   await sendPanel(msg.chat.id);
 });
