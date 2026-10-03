@@ -12,6 +12,7 @@ module.exports = function setupCustomerPortal(ctx) {
       "starts_at TIMESTAMPTZ DEFAULT NOW(), expires_at TIMESTAMPTZ NOT NULL, status TEXT DEFAULT 'active', " +
       "reminded_3d BOOLEAN DEFAULT FALSE, reminded_1d BOOLEAN DEFAULT FALSE, expired_notice BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT NOW());"
     );
+    await pool.query("INSERT INTO settings(key,value) VALUES('customer_announcement','') ON CONFLICT(key) DO NOTHING");
     console.log('Customer portal module ready');
   }
 
@@ -21,26 +22,40 @@ module.exports = function setupCustomerPortal(ctx) {
   }
 
   async function menu(chatId, user) {
-    const [orders, sub] = await Promise.all([
+    const [orders,latestOrder,sub,tickets,devices,announcement,status] = await Promise.all([
       pool.query("SELECT COUNT(*)::int n FROM sales_orders WHERE user_id=$1",[user.id]).catch(()=>({rows:[{n:0}]})),
-      pool.query("SELECT id,status,expires_at FROM subscriptions WHERE user_id=$1 ORDER BY id DESC LIMIT 1",[user.id]).catch(()=>({rows:[]}))
+      pool.query("SELECT id,status,plan_title FROM sales_orders WHERE user_id=$1 ORDER BY id DESC LIMIT 1",[user.id]).catch(()=>({rows:[]})),
+      pool.query("SELECT id,status,expires_at,plan_title FROM subscriptions WHERE user_id=$1 ORDER BY id DESC LIMIT 1",[user.id]).catch(()=>({rows:[]})),
+      pool.query("SELECT COUNT(*)::int n FROM support_tickets WHERE user_id=$1 AND status='open'",[user.id]).catch(()=>({rows:[{n:0}]})),
+      pool.query("SELECT COUNT(*)::int n FROM device_requests WHERE user_id=$1 AND status='pending'",[user.id]).catch(()=>({rows:[{n:0}]})),
+      getSetting('customer_announcement',''),
+      getSetting('service_status','online')
     ]);
     const s=sub.rows[0];
+    const last=latestOrder.rows[0];
     let subText='No subscription';
     if(s){
-      const exp=new Date(s.expires_at).getTime();
-      subText=(s.status==='active'&&exp>Date.now())?'Active':'Expired';
+      const active=s.status==='active'&&new Date(s.expires_at).getTime()>Date.now();
+      subText=active?'✅ '+(s.plan_title||'Premium')+' • '+remainingText(s.expires_at):'❌ Expired';
     }
+    const notice=announcement ? '\n📢 NOTICE\n'+announcement+'\n' : '';
     return bot.sendMessage(chatId,
-      '👤 MAHADI TOOLS CUSTOMER MENU\n\n'+
-      'স্বাগতম '+(user.first_name||'')+' 👋\n'+
-      '🛒 Orders: '+orders.rows[0].n+'\n'+
-      '⏳ Subscription: '+subText+'\n\n'+
-      'নিচের অপশন থেকে বেছে নিন:',
+      '🏠 MAHADI TOOLS — CUSTOMER DASHBOARD\n\n'+
+      '👋 '+(user.first_name||'Customer')+'\n'+
+      '🆔 User ID: '+user.id+'\n'+
+      (user.username?'👤 @'+user.username+'\n':'')+
+      '🟢 Service: '+String(status).toUpperCase()+'\n'+
+      notice+'\n'+
+      '💎 Premium: '+subText+'\n'+
+      '📦 Total Orders: '+orders.rows[0].n+'\n'+
+      '🧾 Last Order: '+(last?'#'+last.id+' • '+String(last.status).toUpperCase():'None')+'\n'+
+      '📱 Device Requests: '+devices.rows[0].n+' pending\n'+
+      '🎫 Support Tickets: '+tickets.rows[0].n+' open',
       {reply_markup:{inline_keyboard:[
-        [{text:'💎 Premium Plans',callback_data:'cust_plans'}],
+        [{text:'💎 Buy Premium',callback_data:'cust_plans'},{text:'🔄 Refresh',callback_data:'cust_menu'}],
         [{text:'📦 My Orders',callback_data:'cust_orders'},{text:'⏳ My Subscription',callback_data:'cust_sub'}],
-        [{text:'🔄 Renew Premium',callback_data:'cust_renew'},{text:'🎫 Support',callback_data:'cust_support'}]
+        [{text:'📱 Device Change',callback_data:'cust_device'},{text:'🎫 Support',callback_data:'cust_support'}],
+        [{text:'🔄 Renew Premium',callback_data:'cust_renew'},{text:'☎️ Official Contact',callback_data:'cust_contact'}]
       ]}}
     );
   }
@@ -48,15 +63,20 @@ module.exports = function setupCustomerPortal(ctx) {
   async function ownerPreview(chatId) {
     return bot.sendMessage(chatId,
       '👁 CUSTOMER SCREEN PREVIEW\n\n'+
-      '👤 MAHADI TOOLS CUSTOMER MENU\n\n'+
-      'স্বাগতম Customer 👋\n'+
-      '🛒 Orders: customer-এর নিজের order count\n'+
-      '⏳ Subscription: customer-এর current status\n\n'+
-      'নিচের অপশন থেকে বেছে নিন:',
+      '🏠 MAHADI TOOLS — CUSTOMER DASHBOARD\n\n'+
+      '👋 Customer Name\n'+
+      '🆔 User ID: customer ID\n'+
+      '🟢 Service: ONLINE\n\n'+
+      '💎 Premium: status + remaining time\n'+
+      '📦 Total Orders: customer order count\n'+
+      '🧾 Last Order: latest status\n'+
+      '📱 Device Requests: pending count\n'+
+      '🎫 Support Tickets: open count',
       {reply_markup:{inline_keyboard:[
-        [{text:'💎 Premium Plans',callback_data:'cust_preview_info'}],
+        [{text:'💎 Buy Premium',callback_data:'cust_preview_info'},{text:'🔄 Refresh',callback_data:'cust_preview_info'}],
         [{text:'📦 My Orders',callback_data:'cust_preview_info'},{text:'⏳ My Subscription',callback_data:'cust_preview_info'}],
-        [{text:'🔄 Renew Premium',callback_data:'cust_preview_info'},{text:'🎫 Support',callback_data:'cust_preview_info'}],
+        [{text:'📱 Device Change',callback_data:'cust_preview_info'},{text:'🎫 Support',callback_data:'cust_preview_info'}],
+        [{text:'🔄 Renew Premium',callback_data:'cust_preview_info'},{text:'☎️ Official Contact',callback_data:'cust_preview_info'}],
         [{text:'⬅️ Back to Owner Panel',callback_data:'main_panel'}]
       ]}}
     );
@@ -267,10 +287,34 @@ module.exports = function setupCustomerPortal(ctx) {
     if(d==='cust_orders') return showOrders(chatId,q.from.id);
     if(d==='cust_sub') return showSubscription(chatId,q.from.id);
     if(d==='cust_support'){
+      sessions.set(q.from.id,{mode:'ticket'});
       return bot.sendMessage(chatId,
-        '🎫 SUPPORT\n\nসমস্যা লিখুন:\n/ticket আপনার সমস্যাটা\n\nPassword বা sensitive তথ্য message-এ দেবেন না।',
-        {reply_markup:{inline_keyboard:[[{text:'⬅️ Customer Menu',callback_data:'cust_menu'}]]}}
+        '🎫 SUPPORT TICKET\n\nআপনার সমস্যাটা এখন লিখে পাঠান।\nPassword বা sensitive তথ্য দেবেন না।',
+        {reply_markup:{inline_keyboard:[[{text:'❌ Cancel',callback_data:'cust_input_cancel'}]]}}
       );
+    }
+    if(d==='cust_device'){
+      sessions.set(q.from.id,{mode:'device'});
+      return bot.sendMessage(chatId,
+        '📱 DEVICE CHANGE REQUEST\n\nAccount/Gmail এবং নতুন device-এর দরকারি details লিখে পাঠান। Password দেবেন না।',
+        {reply_markup:{inline_keyboard:[[{text:'❌ Cancel',callback_data:'cust_input_cancel'}]]}}
+      );
+    }
+    if(d==='cust_contact'){
+      const tg=(await getSetting('contact_telegram',OWNER_USERNAME)).replace(/^@/,'');
+      const wa=(await getSetting('contact_whatsapp','')).replace(/[^0-9]/g,'');
+      const kb=[];
+      kb.push([{text:'✈️ Telegram @'+tg,url:'https://t.me/'+tg}]);
+      if(wa) kb.push([{text:'📱 WhatsApp',url:'https://wa.me/'+wa}]);
+      kb.push([{text:'⬅️ Customer Menu',callback_data:'cust_menu'}]);
+      return bot.sendMessage(chatId,
+        '☎️ OFFICIAL CONTACT\n\nশুধু এই official contact-এ যোগাযোগ করুন। Payment number bot-এ public করা হয় না।',
+        {reply_markup:{inline_keyboard:kb}}
+      );
+    }
+    if(d==='cust_input_cancel'){
+      sessions.delete(q.from.id);
+      return bot.sendMessage(chatId,'❌ Cancelled.',{reply_markup:{inline_keyboard:[[{text:'⬅️ Customer Menu',callback_data:'cust_menu'}]]}});
     }
     if(d==='cust_proof_cancel'){
       sessions.delete(q.from.id);
@@ -291,9 +335,51 @@ module.exports = function setupCustomerPortal(ctx) {
   bot.on('message', async msg=>{
     if(!msg.from || isOwnerUser(msg.from) || msg.chat.type!=='private') return;
     const s=sessions.get(msg.from.id);
-    if(!s || s.mode!=='proof') return;
+    if(!s) return;
     if(msg.text?.startsWith('/')) return;
-    return saveProof(msg,s);
+    if(s.mode==='proof') return saveProof(msg,s);
+
+    if(s.mode==='ticket'){
+      const text=(msg.text||'').trim();
+      if(!text) return bot.sendMessage(msg.chat.id,'আপনার সমস্যাটা text হিসেবে লিখুন।');
+      const r=await pool.query(
+        "INSERT INTO support_tickets(user_id,username,chat_id,message_id,text) VALUES($1,$2,$3,$4,$5) RETURNING id",
+        [msg.from.id,msg.from.username||null,msg.chat.id,msg.message_id,text]
+      );
+      sessions.delete(msg.from.id);
+      const id=r.rows[0].id;
+      await bot.sendMessage(msg.chat.id,'✅ Support Ticket #'+id+' তৈরি হয়েছে। Owner reply করলে এখানে পাবেন।',{
+        reply_markup:{inline_keyboard:[[{text:'👤 Customer Dashboard',callback_data:'cust_menu'}]]}
+      });
+      const oid=await ownerId();
+      if(oid) try {
+        await bot.sendMessage(oid,'🎫 NEW CUSTOMER TICKET #'+id+'\nUser: '+msg.from.id+' '+(msg.from.username?'@'+msg.from.username:'')+'\n\n'+text,{
+          reply_markup:{inline_keyboard:[[{text:'💬 Reply',callback_data:'grp_reply_'+id},{text:'✅ Close',callback_data:'grp_close_'+id}]]}
+        });
+      } catch {}
+      return;
+    }
+
+    if(s.mode==='device'){
+      const details=(msg.text||'').trim();
+      if(!details) return bot.sendMessage(msg.chat.id,'Device change details text হিসেবে লিখুন।');
+      const r=await pool.query(
+        "INSERT INTO device_requests(user_id,username,chat_id,message_id,details) VALUES($1,$2,$3,$4,$5) RETURNING id",
+        [msg.from.id,msg.from.username||null,msg.chat.id,msg.message_id,details]
+      );
+      sessions.delete(msg.from.id);
+      const id=r.rows[0].id;
+      await bot.sendMessage(msg.chat.id,'✅ Device Change Request #'+id+' পাঠানো হয়েছে।',{
+        reply_markup:{inline_keyboard:[[{text:'👤 Customer Dashboard',callback_data:'cust_menu'}]]}
+      });
+      const oid=await ownerId();
+      if(oid) try {
+        await bot.sendMessage(oid,'📱 NEW DEVICE REQUEST #'+id+'\nUser: '+msg.from.id+' '+(msg.from.username?'@'+msg.from.username:'')+'\n\n'+details,{
+          reply_markup:{inline_keyboard:[[{text:'✅ Approve',callback_data:'biz_devapprove_'+id},{text:'❌ Reject',callback_data:'biz_devreject_'+id}]]}
+        });
+      } catch {}
+      return;
+    }
   });
 
   init().catch(e=>console.error('Customer portal init error:',e));
