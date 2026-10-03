@@ -60,6 +60,27 @@ async function initDb() {
       details TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS tracked_users (
+      telegram_id BIGINT PRIMARY KEY,
+      first_username TEXT,
+      current_username TEXT,
+      first_name TEXT,
+      last_name TEXT,
+      is_bot BOOLEAN DEFAULT FALSE,
+      first_seen TIMESTAMPTZ DEFAULT NOW(),
+      last_seen TIMESTAMPTZ DEFAULT NOW(),
+      last_chat_id BIGINT,
+      last_chat_type TEXT
+    );
+    CREATE TABLE IF NOT EXISTS identity_history (
+      id SERIAL PRIMARY KEY,
+      telegram_id BIGINT NOT NULL,
+      field TEXT NOT NULL,
+      old_value TEXT,
+      new_value TEXT,
+      chat_id BIGINT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
   \`);
   const defaults = {
     auto_pin: 'false',
@@ -98,6 +119,64 @@ async function logAction(action,details='') {
   try { await pool.query('INSERT INTO activity_logs(action,details) VALUES($1,$2)',[action,details]); } catch {}
 }
 
+async function trackUser(user, ctx={}) {
+  if (!user?.id) return;
+  const telegramId = user.id;
+  const username = user.username || null;
+  const firstName = user.first_name || null;
+  const lastName = user.last_name || null;
+  const chatId = ctx.chatId || null;
+  const chatType = ctx.chatType || null;
+
+  try {
+    const existing = await pool.query(
+      'SELECT * FROM tracked_users WHERE telegram_id=$1',
+      [telegramId]
+    );
+
+    if (!existing.rows[0]) {
+      await pool.query(
+        `INSERT INTO tracked_users
+        (telegram_id, first_username, current_username, first_name, last_name, is_bot, last_chat_id, last_chat_type)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [telegramId, username, username, firstName, lastName, !!user.is_bot, chatId, chatType]
+      );
+      await logAction('user_first_seen', String(telegramId) + (username ? ' @'+username : ''));
+      return;
+    }
+
+    const old = existing.rows[0];
+    const changes = [
+      ['username', old.current_username, username],
+      ['first_name', old.first_name, firstName],
+      ['last_name', old.last_name, lastName]
+    ];
+
+    for (const [field, oldValue, newValue] of changes) {
+      if ((oldValue || null) !== (newValue || null)) {
+        await pool.query(
+          'INSERT INTO identity_history(telegram_id,field,old_value,new_value,chat_id) VALUES($1,$2,$3,$4,$5)',
+          [telegramId, field, oldValue, newValue, chatId]
+        );
+        await logAction(
+          'identity_change',
+          telegramId + ' ' + field + ': ' + (oldValue || 'none') + ' -> ' + (newValue || 'none')
+        );
+      }
+    }
+
+    await pool.query(
+      `UPDATE tracked_users
+       SET current_username=$2, first_name=$3, last_name=$4, is_bot=$5,
+           last_seen=NOW(), last_chat_id=$6, last_chat_type=$7
+       WHERE telegram_id=$1`,
+      [telegramId, username, firstName, lastName, !!user.is_bot, chatId, chatType]
+    );
+  } catch (e) {
+    console.error('User tracking error:', e.message);
+  }
+}
+
 const mainKeyboard = {
   reply_markup: { inline_keyboard: [
     [{text:'📣 নতুন পোস্ট',callback_data:'new_post'},{text:'⚡ Quick Post',callback_data:'quick_post'}],
@@ -105,6 +184,7 @@ const mainKeyboard = {
     [{text:'🧩 Inline Buttons',callback_data:'buttons_info'},{text:'📌 Auto Pin',callback_data:'toggle_autopin'}],
     [{text:'🛠 Post Tools',callback_data:'post_tools'},{text:'📊 History',callback_data:'history'}],
     [{text:'🤖 Custom Commands',callback_data:'commands_menu'},{text:'💬 Support Setup',callback_data:'support_menu'}],
+    [{text:'👥 User Tracker',callback_data:'user_tracker'},{text:'🆔 Owner Identity',callback_data:'owner_identity'}],
     [{text:'⚙️ Settings',callback_data:'settings_menu'},{text:'📡 Channel Status',callback_data:'check_channel'}],
     [{text:'🧾 Activity Logs',callback_data:'logs'},{text:'❓ Help',callback_data:'help'}]
   ]}
@@ -235,6 +315,7 @@ bot.onText(/^\\/status(?:@\\w+)?$/, async msg=>{
 
 bot.on('callback_query', async q=>{
   const msg=q.message;
+  if (q.from) await trackUser(q.from,{chatId:msg?.chat?.id,chatType:msg?.chat?.type});
   if(!msg || !isOwnerUser(q.from)) return bot.answerCallbackQuery(q.id,{text:'Owner only',show_alert:true});
   await bot.answerCallbackQuery(q.id).catch(()=>{});
   const chatId=msg.chat.id;
@@ -255,6 +336,45 @@ bot.on('callback_query', async q=>{
     } catch(e) { return bot.sendMessage(chatId,'❌ Channel access পাওয়া যায়নি। Bot-কে Channel Admin করুন।'); }
   }
   if(q.data==='settings_menu') return showSettings(chatId);
+
+  if(q.data==='owner_identity') {
+    const u=q.from;
+    return bot.sendMessage(chatId,
+      '🆔 OWNER IDENTITY\n\n' +
+      'Telegram ID: ' + u.id + '\n' +
+      'Username: ' + (u.username ? '@'+u.username : 'None') + '\n' +
+      'First name: ' + (u.first_name || '-') + '\n' +
+      'Last name: ' + (u.last_name || '-')
+    );
+  }
+
+  if(q.data==='user_tracker') {
+    const [countRes,recentRes,changesRes] = await Promise.all([
+      pool.query('SELECT COUNT(*)::int AS count FROM tracked_users'),
+      pool.query(`SELECT telegram_id,current_username,first_name,last_name,last_seen
+                  FROM tracked_users ORDER BY last_seen DESC LIMIT 8`),
+      pool.query(`SELECT telegram_id,field,old_value,new_value,created_at
+                  FROM identity_history ORDER BY id DESC LIMIT 8`)
+    ]);
+    const recent = recentRes.rows.length
+      ? recentRes.rows.map(x =>
+          '• ' + x.telegram_id + ' | ' +
+          (x.current_username ? '@'+x.current_username : (x.first_name || 'No username'))
+        ).join('\n')
+      : 'No users tracked yet.';
+    const changes = changesRes.rows.length
+      ? changesRes.rows.map(x =>
+          '• ' + x.telegram_id + ' ' + x.field + ': ' +
+          (x.old_value || 'none') + ' → ' + (x.new_value || 'none')
+        ).join('\n')
+      : 'No identity changes yet.';
+    return bot.sendMessage(chatId,
+      '👥 USER TRACKER\n\n' +
+      'Known users: ' + countRes.rows[0].count + '\n\n' +
+      'Recently seen:\n' + recent + '\n\n' +
+      'Recent identity changes:\n' + changes
+    );
+  }
 
   if(q.data==='toggle_autopin' || q.data==='toggle_silent' || q.data==='toggle_preview') {
     const key=q.data==='toggle_autopin'?'auto_pin':q.data==='toggle_silent'?'silent_post':'link_preview';
@@ -383,6 +503,20 @@ bot.on('callback_query', async q=>{
     return bot.sendMessage(chatId,'❓ HELP\\n\\n/start — Start\\n/panel — Premium Panel\\n/post — New Post\\n/status — Status\\n\\nসব বড় feature button দিয়েই control করা যাবে।');
   }
   if(q.data==='cancel_pending') { sessions.delete(chatId); return bot.sendMessage(chatId,'❌ Cancelled.'); }
+});
+
+bot.on('message', async msg=>{
+  if (msg.from) await trackUser(msg.from,{chatId:msg.chat?.id,chatType:msg.chat?.type});
+  if (Array.isArray(msg.new_chat_members)) {
+    for (const u of msg.new_chat_members) {
+      await trackUser(u,{chatId:msg.chat?.id,chatType:msg.chat?.type});
+      await logAction('group_join', String(u.id) + (u.username ? ' @'+u.username : ''));
+    }
+  }
+  if (msg.left_chat_member) {
+    await trackUser(msg.left_chat_member,{chatId:msg.chat?.id,chatType:msg.chat?.type});
+    await logAction('group_leave', String(msg.left_chat_member.id) + (msg.left_chat_member.username ? ' @'+msg.left_chat_member.username : ''));
+  }
 });
 
 bot.on('message', async msg=>{
