@@ -194,11 +194,11 @@ async function sendPanel(chatId) {
   const autoPin = await getSetting('auto_pin','false');
   const status = await getSetting('service_status','online');
   await bot.sendMessage(chatId,
-    '✨ MAHADI TOOLS ASSISTANT — PREMIUM PANEL\\n\\n' +
-    '👑 Owner: @' + OWNER_USERNAME + '\\n' +
-    '📢 Channel: ' + CHANNEL + '\\n' +
-    '📌 Auto Pin: ' + (autoPin==='true'?'ON':'OFF') + '\\n' +
-    '🟢 Service: ' + status.toUpperCase() + '\\n\\n' +
+    '✨ MAHADI TOOLS ASSISTANT — PREMIUM PANEL\n\n' +
+    '👑 Owner: @' + OWNER_USERNAME + '\n' +
+    '📢 Channel: ' + CHANNEL + '\n' +
+    '📌 Auto Pin: ' + (autoPin==='true'?'ON':'OFF') + '\n' +
+    '🟢 Service: ' + status.toUpperCase() + '\n\n' +
     'নিচের যেকোনো অপশন ব্যবহার করুন:',
     mainKeyboard
   );
@@ -210,11 +210,11 @@ async function showSettings(chatId) {
     getSetting('signature',''),getSetting('service_status','online')
   ]);
   await bot.sendMessage(chatId,
-    '⚙️ SETTINGS\\n\\n' +
-    '📌 Auto Pin: '+(autoPin==='true'?'ON':'OFF')+'\\n' +
-    '🔕 Silent Post: '+(silent==='true'?'ON':'OFF')+'\\n' +
-    '🔗 Link Preview: '+(preview==='true'?'ON':'OFF')+'\\n' +
-    '✍️ Signature: '+(signature||'Not set')+'\\n' +
+    '⚙️ SETTINGS\n\n' +
+    '📌 Auto Pin: '+(autoPin==='true'?'ON':'OFF')+'\n' +
+    '🔕 Silent Post: '+(silent==='true'?'ON':'OFF')+'\n' +
+    '🔗 Link Preview: '+(preview==='true'?'ON':'OFF')+'\n' +
+    '✍️ Signature: '+(signature||'Not set')+'\n' +
     '🟢 Service Status: '+status.toUpperCase(),
     {reply_markup:{inline_keyboard:[
       [{text:'📌 Toggle Auto Pin',callback_data:'toggle_autopin'},{text:'🔕 Toggle Silent',callback_data:'toggle_silent'}],
@@ -226,13 +226,13 @@ async function showSettings(chatId) {
 
 async function previewPayload(chatId,payload) {
   if (payload.type==='text') {
-    await bot.sendMessage(chatId,'👁️ PREVIEW\\n\\n'+payload.text);
+    await bot.sendMessage(chatId,'👁️ PREVIEW\n\n'+payload.text);
   } else if (payload.type==='photo') {
-    await bot.sendPhoto(chatId,payload.fileId,{caption:'👁️ PREVIEW\\n\\n'+(payload.caption||'')});
+    await bot.sendPhoto(chatId,payload.fileId,{caption:'👁️ PREVIEW\n\n'+(payload.caption||'')});
   } else if (payload.type==='video') {
-    await bot.sendVideo(chatId,payload.fileId,{caption:'👁️ PREVIEW\\n\\n'+(payload.caption||'')});
+    await bot.sendVideo(chatId,payload.fileId,{caption:'👁️ PREVIEW\n\n'+(payload.caption||'')});
   } else if (payload.type==='document') {
-    await bot.sendDocument(chatId,payload.fileId,{caption:'👁️ PREVIEW\\n\\n'+(payload.caption||'')});
+    await bot.sendDocument(chatId,payload.fileId,{caption:'👁️ PREVIEW\n\n'+(payload.caption||'')});
   }
   await bot.sendMessage(chatId,'পোস্টের জন্য কী করবেন?',{
     reply_markup:{inline_keyboard:[
@@ -251,7 +251,7 @@ async function sendToChannel(payload) {
   const buttons = payload.buttons || [];
   const reply_markup = buttons.length ? {inline_keyboard:buttons.map(b=>[{text:b.text,url:b.url}])} : undefined;
   let sent;
-  const appendSig = txt => signature ? (txt ? txt+'\\n\\n'+signature : signature) : (txt||'');
+  const appendSig = txt => signature ? (txt ? txt+'\n\n'+signature : signature) : (txt||'');
   const opts = { disable_notification: silent==='true' };
   if (reply_markup) opts.reply_markup=reply_markup;
 
@@ -279,7 +279,7 @@ async function sendToChannel(payload) {
 function parseOmanSchedule(input) {
   const s=(input||'').trim();
   let dateStr,timeStr;
-  if (/^\\d{1,2}:\\d{2}$/.test(s)) {
+  if (/^\d{1,2}:\d{2}$/.test(s)) {
     const nowOman=new Date(Date.now()+4*3600000);
     dateStr=nowOman.toISOString().slice(0,10);
     timeStr=s.padStart(5,'0');
@@ -291,26 +291,26 @@ function parseOmanSchedule(input) {
     }
     return d;
   }
-  const m=s.match(/^(\\d{4}-\\d{2}-\\d{2})\\s+(\\d{1,2}:\\d{2})$/);
+  const m=s.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})$/);
   if (m) return new Date(m[1]+'T'+m[2].padStart(5,'0')+':00+04:00');
   return null;
 }
 
-bot.onText(/^\\/start(?:@\\w+)?$/, async msg=>{
+bot.onText(/^\/start(?:@\w+)?$/, async msg=>{
   if (!isOwnerMsg(msg)) return bot.sendMessage(msg.chat.id,'🔒 Private bot — Owner only.');
-  await bot.sendMessage(msg.chat.id,'✅ Mahadi Tools Assistant Premium চালু হয়েছে।\\n\\n/panel দিয়ে Control Panel খুলুন।');
+  await bot.sendMessage(msg.chat.id,'✅ Mahadi Tools Assistant Premium চালু হয়েছে।\n\n/panel দিয়ে Control Panel খুলুন।');
   await sendPanel(msg.chat.id);
 });
-bot.onText(/^\\/panel(?:@\\w+)?$/, async msg=>{ if(isOwnerMsg(msg)) await sendPanel(msg.chat.id); });
-bot.onText(/^\\/post(?:@\\w+)?$/, async msg=>{
+bot.onText(/^\/panel(?:@\w+)?$/, async msg=>{ if(isOwnerMsg(msg)) await sendPanel(msg.chat.id); });
+bot.onText(/^\/post(?:@\w+)?$/, async msg=>{
   if(!isOwnerMsg(msg)) return;
   sessions.set(msg.chat.id,{mode:'await_post'});
   await bot.sendMessage(msg.chat.id,'📣 Text / Photo / Video / File পাঠান। এরপর Preview দেখাব।');
 });
-bot.onText(/^\\/status(?:@\\w+)?$/, async msg=>{
+bot.onText(/^\/status(?:@\w+)?$/, async msg=>{
   if(!isOwnerMsg(msg)) return;
   const status=await getSetting('service_status','online');
-  await bot.sendMessage(msg.chat.id,'🟢 Bot Online\\n📢 '+CHANNEL+'\\n🛠 Service: '+status.toUpperCase());
+  await bot.sendMessage(msg.chat.id,'🟢 Bot Online\n📢 '+CHANNEL+'\n🛠 Service: '+status.toUpperCase());
 });
 
 bot.on('callback_query', async q=>{
@@ -330,8 +330,8 @@ bot.on('callback_query', async q=>{
       const chat=await bot.getChat(CHANNEL); const me=await bot.getMe();
       const member=await bot.getChatMember(chat.id,me.id);
       return bot.sendMessage(chatId,
-        '✅ CHANNEL READY\\n\\nName: '+(chat.title||CHANNEL)+'\\nID: '+chat.id+'\\nBot: '+member.status+
-        '\\n\\n'+(member.status==='administrator'?'🟢 Posting permission ready.':'🟡 Bot-কে Admin করুন.')
+        '✅ CHANNEL READY\n\nName: '+(chat.title||CHANNEL)+'\nID: '+chat.id+'\nBot: '+member.status+
+        '\n\n'+(member.status==='administrator'?'🟢 Posting permission ready.':'🟡 Bot-কে Admin করুন.')
       );
     } catch(e) { return bot.sendMessage(chatId,'❌ Channel access পাওয়া যায়নি। Bot-কে Channel Admin করুন।'); }
   }
@@ -384,10 +384,10 @@ bot.on('callback_query', async q=>{
   }
   if(q.data==='set_signature') {
     sessions.set(chatId,{mode:'set_signature'});
-    return bot.sendMessage(chatId,'✍️ প্রতিটি পোস্টের শেষে যে Signature যাবে সেটা লিখুন।\\nRemove করতে শুধু: off');
+    return bot.sendMessage(chatId,'✍️ প্রতিটি পোস্টের শেষে যে Signature যাবে সেটা লিখুন।\nRemove করতে শুধু: off');
   }
   if(q.data==='buttons_info') {
-    return bot.sendMessage(chatId,'🧩 Inline Button পোস্ট বানানোর সময় ➕ Add Button চাপুন।\\nএক পোস্টে একাধিক button যোগ করা যাবে।');
+    return bot.sendMessage(chatId,'🧩 Inline Button পোস্ট বানানোর সময় ➕ Add Button চাপুন।\nএক পোস্টে একাধিক button যোগ করা যাবে।');
   }
   if(q.data==='add_button') {
     const s=sessions.get(chatId);
@@ -430,7 +430,7 @@ bot.on('callback_query', async q=>{
   if(q.data==='schedule_pending') {
     const s=sessions.get(chatId); if(!s?.payload) return bot.sendMessage(chatId,'Post পাওয়া যায়নি।');
     s.mode='await_schedule_time'; sessions.set(chatId,s);
-    return bot.sendMessage(chatId,'⏰ Oman time দিন।\\nExample: 18:30\\nঅথবা: 2026-10-04 18:30');
+    return bot.sendMessage(chatId,'⏰ Oman time দিন।\nExample: 18:30\nঅথবা: 2026-10-04 18:30');
   }
   if(q.data==='scheduled_menu') {
     const r=await pool.query("SELECT id,schedule_at,status FROM scheduled_posts WHERE status='pending' ORDER BY schedule_at LIMIT 10");
@@ -465,11 +465,11 @@ bot.on('callback_query', async q=>{
   if(q.data==='history') {
     const r=await pool.query('SELECT id,telegram_message_id,created_at FROM post_history ORDER BY id DESC LIMIT 10');
     if(!r.rows.length) return bot.sendMessage(chatId,'📊 এখনো কোনো publish history নেই।');
-    return bot.sendMessage(chatId,'📊 LAST POSTS\\n\\n'+r.rows.map(x=>'#'+x.id+' • Message '+x.telegram_message_id+' • '+new Date(x.created_at).toLocaleString('en-GB',{timeZone:'Asia/Muscat'})).join('\\n'));
+    return bot.sendMessage(chatId,'📊 LAST POSTS\n\n'+r.rows.map(x=>'#'+x.id+' • Message '+x.telegram_message_id+' • '+new Date(x.created_at).toLocaleString('en-GB',{timeZone:'Asia/Muscat'})).join('\n'));
   }
   if(q.data==='commands_menu') {
     const r=await pool.query('SELECT command FROM custom_commands WHERE enabled=TRUE ORDER BY command');
-    return bot.sendMessage(chatId,'🤖 CUSTOM COMMANDS\\n\\n'+(r.rows.length?r.rows.map(x=>'/'+x.command).join('\\n'):'কোনো custom command নেই।'),{
+    return bot.sendMessage(chatId,'🤖 CUSTOM COMMANDS\n\n'+(r.rows.length?r.rows.map(x=>'/'+x.command).join('\n'):'কোনো custom command নেই।'),{
       reply_markup:{inline_keyboard:[
         [{text:'➕ Add Command',callback_data:'cmd_add'},{text:'🗑 Delete Command',callback_data:'cmd_delete'}],
         [{text:'⬅️ Main Panel',callback_data:'main_panel'}]
@@ -481,7 +481,7 @@ bot.on('callback_query', async q=>{
 
   if(q.data==='support_menu') {
     const status=await getSetting('service_status','online');
-    return bot.sendMessage(chatId,'💬 SUPPORT SETUP\\n\\nCurrent Service Status: '+status.toUpperCase(),{
+    return bot.sendMessage(chatId,'💬 SUPPORT SETUP\n\nCurrent Service Status: '+status.toUpperCase(),{
       reply_markup:{inline_keyboard:[
         [{text:'🟢 Online',callback_data:'status_online'},{text:'🟠 Maintenance',callback_data:'status_maintenance'}],
         [{text:'🔴 Issue',callback_data:'status_issue'},{text:'📝 Maintenance Note',callback_data:'maintenance_note'}],
@@ -497,10 +497,10 @@ bot.on('callback_query', async q=>{
 
   if(q.data==='logs') {
     const r=await pool.query('SELECT action,details,created_at FROM activity_logs ORDER BY id DESC LIMIT 12');
-    return bot.sendMessage(chatId,'🧾 ACTIVITY LOGS\\n\\n'+(r.rows.length?r.rows.map(x=>'• '+x.action+' — '+(x.details||'')+' — '+new Date(x.created_at).toLocaleString('en-GB',{timeZone:'Asia/Muscat'})).join('\\n'):'No logs yet.'));
+    return bot.sendMessage(chatId,'🧾 ACTIVITY LOGS\n\n'+(r.rows.length?r.rows.map(x=>'• '+x.action+' — '+(x.details||'')+' — '+new Date(x.created_at).toLocaleString('en-GB',{timeZone:'Asia/Muscat'})).join('\n'):'No logs yet.'));
   }
   if(q.data==='help') {
-    return bot.sendMessage(chatId,'❓ HELP\\n\\n/start — Start\\n/panel — Premium Panel\\n/post — New Post\\n/status — Status\\n\\nসব বড় feature button দিয়েই control করা যাবে।');
+    return bot.sendMessage(chatId,'❓ HELP\n\n/start — Start\n/panel — Premium Panel\n/post — New Post\n/status — Status\n\nসব বড় feature button দিয়েই control করা যাবে।');
   }
   if(q.data==='cancel_pending') { sessions.delete(chatId); return bot.sendMessage(chatId,'❌ Cancelled.'); }
 });
@@ -558,7 +558,7 @@ bot.on('message', async msg=>{
     if(!d || isNaN(d.getTime())) return bot.sendMessage(chatId,'সময় বুঝিনি। Example: 18:30 অথবা 2026-10-04 18:30');
     const r=await pool.query('INSERT INTO scheduled_posts(payload,schedule_at) VALUES($1,$2) RETURNING id',[s.payload,d]);
     sessions.delete(chatId); await logAction('scheduled','id='+r.rows[0].id);
-    return bot.sendMessage(chatId,'⏰ Scheduled #'+r.rows[0].id+'\\nOman time: '+d.toLocaleString('en-GB',{timeZone:'Asia/Muscat'}));
+    return bot.sendMessage(chatId,'⏰ Scheduled #'+r.rows[0].id+'\nOman time: '+d.toLocaleString('en-GB',{timeZone:'Asia/Muscat'}));
   }
   if(s.mode==='set_signature') {
     await setSetting('signature',(msg.text||'').trim().toLowerCase()==='off'?'':msg.text||'');
