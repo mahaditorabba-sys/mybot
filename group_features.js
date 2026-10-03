@@ -219,6 +219,7 @@ module.exports = function setupGroupFeatures(ctx) {
     if(d.indexOf('grp_')!==0)return;if(!isOwnerUser(q.from))return;await saveOwner(q.from);await bot.answerCallbackQuery(q.id).catch(function(){});const chatId=q.message.chat.id;
     const map={grp_link:'group_link_filter',grp_flood:'group_flood_guard',grp_welcome:'group_welcome',grp_support:'group_support',grp_lockdown:'group_lockdown'};
     if(map[d]){const cur=await getSetting(map[d],'false');await setSetting(map[d],cur==='true'?'false':'true');return settingsPanel(chatId);}
+    if(d==='grp_security')return settingsPanel(chatId);
     if(d==='grp_nsfw')return bot.sendMessage(chatId,process.env.NSFW_API_URL?'🔞 AI Media Guard connected.':'🔞 18+ media pipeline ready, কিন্তু real AI scan চালাতে moderation API key/endpoint লাগবে।');
     if(d==='grp_plans')return plans(chatId);if(d==='grp_analytics')return bot.sendMessage(chatId,await analytics());
     if(d==='grp_tickets'){const r=await pool.query("SELECT id,user_id,username FROM support_tickets WHERE status='open' ORDER BY id DESC LIMIT 10");if(!r.rows.length)return bot.sendMessage(chatId,'🎫 কোনো open ticket নেই।');return bot.sendMessage(chatId,'🎫 OPEN TICKETS',{reply_markup:{inline_keyboard:r.rows.map(function(x){return [{text:'#'+x.id+' • '+(x.username?'@'+x.username:x.user_id),callback_data:'grp_view_'+x.id}];})}});}
