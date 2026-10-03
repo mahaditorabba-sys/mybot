@@ -142,10 +142,8 @@ module.exports = function setupBusinessFeatures(ctx) {
     if (d==='biz_sales') return salesSummary(chatId);
 
     if (d==='biz_payment') {
-      sessions.set(q.from.id,{mode:'payment'});
-      const cur=await getSetting('payment_info','');
       return bot.sendMessage(chatId,
-        '💳 Payment Info লিখুন। এটা customer-কে দেখানো যাবে।\n\nCurrent:\n'+(cur||'Not set')+'\n\nRemove করতে: off'
+        '💳 PAYMENT METHODS\n\n💗 bKash\n🟠 Nagad\n\n🔒 Customer-এর কাছে কোনো payment number দেখানো হবে না।\nPlan select → bKash/Nagad → WhatsApp/Telegram → Owner-এর সাথে message.'
       );
     }
 
