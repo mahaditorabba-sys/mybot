@@ -3,6 +3,7 @@ const express = require('express');
 const { Pool } = require('pg');
 const setupGroupFeatures = require('./group_features');
 const setupBusinessFeatures = require('./business_features');
+const setupAdminPlus = require('./admin_plus_features');
 
 const TOKEN = process.env.BOT_TOKEN;
 const OWNER_USERNAME = (process.env.OWNER_USERNAME || 'Mahadihasanrony11').replace(/^@/, '').toLowerCase();
@@ -21,8 +22,8 @@ const sessions = new Map();
 let ownerId = null;
 
 
-app.get('/', (_, res) => res.send('Mahadi Tools Assistant v3 is running'));
-app.get('/health', (_, res) => res.json({ ok: true, bot: 'Mahadi Tools Assistant', version: '3.0.0' }));
+app.get('/', (_, res) => res.send('Mahadi Tools Assistant v4 is running'));
+app.get('/health', (_, res) => res.json({ ok: true, bot: 'Mahadi Tools Assistant', version: '4.0.0' }));
 app.listen(PORT, () => console.log('Health server listening on', PORT));
 
 async function initDb() {
@@ -189,10 +190,11 @@ const mainKeyboard = {
     [{text:'🤖 Custom Commands',callback_data:'commands_menu'},{text:'💬 Support Setup',callback_data:'support_menu'}],
     [{text:'🛡 Group Security',callback_data:'grp_security'},{text:'💎 Premium Plans',callback_data:'grp_plans'}],
     [{text:'🎫 Support Tickets',callback_data:'grp_tickets'},{text:'📊 Analytics',callback_data:'grp_analytics'}],
-    [{text:'💼 Business Tools',callback_data:'biz_menu'},{text:'👥 User Tracker',callback_data:'user_tracker'}],
-    [{text:'🆔 Owner Identity',callback_data:'owner_identity'},{text:'⚙️ Settings',callback_data:'settings_menu'}],
-    [{text:'📡 Channel Status',callback_data:'check_channel'},{text:'🧾 Activity Logs',callback_data:'logs'}],
-    [{text:'❓ Help',callback_data:'help'}]
+    [{text:'💼 Business Tools',callback_data:'biz_menu'},{text:'🧰 Admin Pack',callback_data:'plus_menu'}],
+    [{text:'👥 User Tracker',callback_data:'user_tracker'},{text:'🆔 Owner Identity',callback_data:'owner_identity'}],
+    [{text:'⚙️ Settings',callback_data:'settings_menu'},{text:'📡 Channel Status',callback_data:'check_channel'}],
+    [{text:'🧾 Activity Logs',callback_data:'logs'},{text:'❓ Help',callback_data:'help'}],
+    
   ]}
 };
 
@@ -320,7 +322,7 @@ bot.onText(/^\/status(?:@\w+)?$/, async msg=>{
 });
 
 bot.on('callback_query', async q=>{
-  if (q.data && (q.data.startsWith('pub_') || q.data.startsWith('biz_'))) return;
+  if (q.data && (q.data.startsWith('pub_') || q.data.startsWith('biz_') || q.data.startsWith('plus_'))) return;
   const msg=q.message;
   if (q.from) await trackUser(q.from,{chatId:msg?.chat?.id,chatType:msg?.chat?.type});
   if(!msg || !isOwnerUser(q.from)) return bot.answerCallbackQuery(q.id,{text:'Owner only',show_alert:true});
@@ -626,5 +628,9 @@ setupBusinessFeatures({
   OWNER_USERNAME, CHANNEL
 });
 
+setupAdminPlus({
+  bot, pool, isOwnerUser, getSetting, setSetting, trackUser
+});
+
 bot.on('polling_error',err=>console.error('Polling error:',err.message));
-console.log('Mahadi Tools Assistant v3 booted');
+console.log('Mahadi Tools Assistant v4 booted');
