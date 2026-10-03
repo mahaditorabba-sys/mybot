@@ -22,14 +22,16 @@ module.exports = function setupCustomerPortal(ctx) {
   }
 
   async function menu(chatId, user) {
-    const [orders,latestOrder,sub,tickets,devices,announcement,status] = await Promise.all([
+    const [orders,latestOrder,sub,tickets,devices,announcement,status,pendingOrders,noticeAudience] = await Promise.all([
       pool.query("SELECT COUNT(*)::int n FROM sales_orders WHERE user_id=$1",[user.id]).catch(()=>({rows:[{n:0}]})),
       pool.query("SELECT id,status,plan_title FROM sales_orders WHERE user_id=$1 ORDER BY id DESC LIMIT 1",[user.id]).catch(()=>({rows:[]})),
       pool.query("SELECT s.id,s.status,s.expires_at,s.plan_title,o.plan_id FROM subscriptions s LEFT JOIN sales_orders o ON o.id=s.order_id WHERE s.user_id=$1 ORDER BY s.id DESC LIMIT 1",[user.id]).catch(()=>({rows:[]})),
       pool.query("SELECT COUNT(*)::int n FROM support_tickets WHERE user_id=$1 AND status='open'",[user.id]).catch(()=>({rows:[{n:0}]})),
       pool.query("SELECT COUNT(*)::int n FROM device_requests WHERE user_id=$1 AND status='pending'",[user.id]).catch(()=>({rows:[{n:0}]})),
       getSetting('customer_announcement',''),
-      getSetting('service_status','online')
+      getSetting('service_status','online'),
+      pool.query("SELECT COUNT(*)::int n FROM sales_orders WHERE user_id=$1 AND status='pending'",[user.id]).catch(()=>({rows:[{n:0}]})),
+      getSetting('customer_announcement_audience','all')
     ]);
     const s=sub.rows[0];
     const last=latestOrder.rows[0];
@@ -38,7 +40,14 @@ module.exports = function setupCustomerPortal(ctx) {
       const active=s.status==='active'&&new Date(s.expires_at).getTime()>Date.now();
       subText=active?'✅ '+(s.plan_title||'Premium')+' • '+remainingText(s.expires_at):'❌ Expired';
     }
-    const notice=announcement ? '\n📢 NOTICE\n'+announcement+'\n' : '';
+    const activeSub=!!(s&&s.status==='active'&&new Date(s.expires_at).getTime()>Date.now());
+    const expiredSub=!!(s&&!activeSub);
+    const hasPending=Number(pendingOrders.rows[0]?.n||0)>0;
+    const audienceMatch=noticeAudience==='all' ||
+      (noticeAudience==='active'&&activeSub) ||
+      (noticeAudience==='expired'&&expiredSub) ||
+      (noticeAudience==='pending'&&hasPending);
+    const notice=(announcement&&audienceMatch) ? '\n📢 NOTICE\n'+announcement+'\n' : '';
     const renewCb=s?.plan_id?'pub_plan_'+s.plan_id:'cust_renew';
     return bot.sendMessage(chatId,
       '🏠 MAHADI TOOLS — CUSTOMER DASHBOARD\n\n'+
