@@ -7,6 +7,7 @@ const TOKEN = process.env.BOT_TOKEN;
 const OWNER_USERNAME = (process.env.OWNER_USERNAME || 'Mahadihasanrony11').replace(/^@/, '').toLowerCase();
 const CHANNEL = process.env.CHANNEL_USERNAME || '@MahadiToolsOfficial';
 const DATABASE_URL = process.env.DATABASE_URL;
+const SITE_BRIDGE_SECRET = process.env.SITE_BRIDGE_SECRET || '';
 
 if (!TOKEN) throw new Error('BOT_TOKEN is missing');
 if (!DATABASE_URL) throw new Error('DATABASE_URL is missing');
@@ -18,6 +19,85 @@ const pool = new Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorize
 
 const sessions = new Map();
 let ownerId = null;
+
+app.use(express.json({limit:'1mb'}));
+
+async function resolveOwnerChatId() {
+  try {
+    const s = await pool.query("SELECT value FROM settings WHERE key='owner_id' LIMIT 1");
+    if (s.rows[0]?.value) return Number(s.rows[0].value);
+  } catch {}
+  if (ownerId) return ownerId;
+  try {
+    const r = await pool.query(
+      "SELECT telegram_id FROM tracked_users WHERE lower(current_username)=$1 ORDER BY last_seen DESC LIMIT 1",
+      [OWNER_USERNAME]
+    );
+    if (r.rows[0]?.telegram_id) return Number(r.rows[0].telegram_id);
+  } catch {}
+  return null;
+}
+
+function bridgeAuthorized(req) {
+  const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i,'');
+  const header = String(req.headers['x-bridge-secret'] || '');
+  return !!SITE_BRIDGE_SECRET && (bearer === SITE_BRIDGE_SECRET || header === SITE_BRIDGE_SECRET);
+}
+
+app.post('/website/event', async (req,res) => {
+  if (!bridgeAuthorized(req)) return res.status(401).json({ok:false,error:'unauthorized'});
+  const body = req.body || {};
+  const type = String(body.type || 'website_event').slice(0,80);
+  const user = body.user || {};
+  const details = body.details || {};
+  const eventId = String(body.event_id || '').slice(0,120) || null;
+
+  try {
+    const dup = eventId ? await pool.query('SELECT id FROM website_events WHERE event_id=$1 LIMIT 1',[eventId]) : null;
+    if (dup?.rows?.length) return res.json({ok:true,duplicate:true});
+
+    const r = await pool.query(
+      'INSERT INTO website_events(event_id,event_type,user_data,details,status) VALUES($1,$2,$3,$4,$5) RETURNING id',
+      [eventId,type,user,details,'received']
+    );
+
+    const ownerChatId = await resolveOwnerChatId();
+    const who = user.username ? '@'+user.username : (user.email || user.name || user.id || 'Unknown user');
+    let title = '🌐 WEBSITE EVENT';
+    if (type === 'premium_pending' || type === 'premium_request') title = '💎 PREMIUM REQUEST';
+    else if (type === 'admin_inbox' || type === 'user_message') title = '💬 WEBSITE INBOX';
+    else if (type === 'status_pending') title = '⏳ PENDING REQUEST';
+    else if (type === 'premium_approved') title = '✅ PREMIUM APPROVED';
+    else if (type === 'premium_rejected') title = '❌ PREMIUM REJECTED';
+
+    const lines = [
+      title,
+      '',
+      'User: '+who,
+      user.id ? 'User ID: '+user.id : '',
+      user.email ? 'Email: '+user.email : '',
+      details.plan ? 'Plan: '+details.plan : '',
+      details.price ? 'Price: '+details.price : '',
+      details.message ? 'Message: '+details.message : '',
+      details.status ? 'Status: '+details.status : '',
+      '',
+      'Website Event #'+r.rows[0].id
+    ].filter(Boolean);
+
+    if (ownerChatId) {
+      await bot.sendMessage(ownerChatId,lines.join('\n'),{
+        reply_markup:{inline_keyboard:[
+          [{text:'🌐 Open Website Queue',callback_data:'web_queue'}]
+        ]}
+      }).catch(()=>{});
+    }
+    await logAction('website_event',type+' #'+r.rows[0].id);
+    return res.json({ok:true,id:r.rows[0].id});
+  } catch (e) {
+    console.error('Website bridge error:',e.message);
+    return res.status(500).json({ok:false,error:'server_error'});
+  }
+});
 
 app.get('/', (_, res) => res.send('Mahadi Tools Assistant v2 is running'));
 app.get('/health', (_, res) => res.json({ ok: true, bot: 'Mahadi Tools Assistant', version: '2.0.0' }));
@@ -72,6 +152,15 @@ async function initDb() {
       last_seen TIMESTAMPTZ DEFAULT NOW(),
       last_chat_id BIGINT,
       last_chat_type TEXT
+    );
+    CREATE TABLE IF NOT EXISTS website_events (
+      id SERIAL PRIMARY KEY,
+      event_id TEXT UNIQUE,
+      event_type TEXT NOT NULL,
+      user_data JSONB,
+      details JSONB,
+      status TEXT DEFAULT 'received',
+      created_at TIMESTAMPTZ DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS identity_history (
       id SERIAL PRIMARY KEY,
@@ -325,6 +414,16 @@ bot.on('callback_query', async q=>{
   const chatId=msg.chat.id;
 
   if(q.data==='main_panel') return sendPanel(chatId);
+  if(q.data==='web_queue') {
+    const r=await pool.query("SELECT id,event_type,user_data,details,created_at FROM website_events ORDER BY id DESC LIMIT 10");
+    if(!r.rows.length) return bot.sendMessage(chatId,'🌐 Website queue খালি।');
+    const text=r.rows.map(x=>{
+      const u=x.user_data||{}, d=x.details||{};
+      const who=u.username?'@'+u.username:(u.email||u.name||u.id||'Unknown');
+      return '#'+x.id+' • '+x.event_type+' • '+who+(d.message?' • '+String(d.message).slice(0,70):'');
+    }).join('\n');
+    return bot.sendMessage(chatId,'🌐 WEBSITE QUEUE\n\n'+text);
+  }
   if(q.data==='new_post' || q.data==='quick_post') {
     sessions.set(chatId,{mode:'await_post'});
     return bot.sendMessage(chatId,'📣 এখন Text / Photo / Video / File পাঠান।');
