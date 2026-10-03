@@ -135,15 +135,23 @@ module.exports = function setupGroupFeatures(ctx) {
   }
 
   async function customerPlan(chatId, plan, user) {
-    const tg=(await getSetting('contact_telegram',OWNER_USERNAME)).replace(/^@/,'');
-    const wa=(await getSetting('contact_whatsapp','')).replace(/[^0-9]/g,'');
-    const text='Mahadi Tools Premium order%0APlan: '+encodeURIComponent(plan.title)+'%0APrice: '+encodeURIComponent(plan.price_text);
-    const kb=[];
-    if(wa) kb.push([{text:'📱 WhatsApp',callback_data:'pub_waplan_'+plan.id}]);
-    kb.push([{text:'✈️ Telegram Inbox',callback_data:'pub_tgplan_'+plan.id}]);
-    kb.push([{text:'💳 Payment Info',callback_data:'pub_payment'}]);
     return bot.sendMessage(chatId,
-      '💎 '+plan.title+'\n💰 '+plan.price_text+'\n\n'+(plan.details||'')+'\n\nকোথায় message দিতে চান?',
+      '💎 '+plan.title+'\n💰 '+plan.price_text+'\n\n'+(plan.details||'')+'\n\nPayment method সিলেক্ট করুন।\n🔒 bKash/Nagad-এর কোনো number bot-এ দেখানো হবে না।',
+      {reply_markup:{inline_keyboard:[
+        [{text:'💗 bKash',callback_data:'pub_pay_bkash_'+plan.id},{text:'🟠 Nagad',callback_data:'pub_pay_nagad_'+plan.id}]
+      ]}}
+    );
+  }
+
+  async function paymentContactChoice(chatId, planId, method) {
+    const r=await pool.query('SELECT * FROM subscription_plans WHERE id=$1',[planId]);
+    const p=r.rows[0]; if(!p)return;
+    const wa=(await getSetting('contact_whatsapp','')).replace(/[^0-9]/g,'');
+    const kb=[];
+    if(wa) kb.push([{text:'📱 WhatsApp',callback_data:'pub_contactwa_'+method+'_'+p.id}]);
+    kb.push([{text:'✈️ Telegram',callback_data:'pub_contacttg_'+method+'_'+p.id}]);
+    return bot.sendMessage(chatId,
+      (method==='bkash'?'💗 bKash':'🟠 Nagad')+' selected.\n\nআগে Owner-এর সাথে কোথায় message দিতে চান?',
       {reply_markup:{inline_keyboard:kb}}
     );
   }
@@ -275,6 +283,40 @@ module.exports = function setupGroupFeatures(ctx) {
         const p=r.rows[0];
         if(p)return customerPlan(q.message.chat.id,p,q.from);
       }
+      if(d.indexOf('pub_pay_')===0){
+        const m=d.match(/^pub_pay_(bkash|nagad)_(\d+)$/);
+        if(!m)return;
+        return paymentContactChoice(q.message.chat.id,Number(m[2]),m[1]);
+      }
+      if(d.indexOf('pub_contacttg_')===0 || d.indexOf('pub_contactwa_')===0){
+        const via=d.indexOf('pub_contacttg_')===0?'telegram':'whatsapp';
+        const m=d.match(/^pub_contact(?:tg|wa)_(bkash|nagad)_(\d+)$/);
+        if(!m)return;
+        const method=m[1],id=Number(m[2]);
+        const r=await pool.query('SELECT * FROM subscription_plans WHERE id=$1',[id]);
+        const p=r.rows[0]; if(!p)return;
+        const o=await pool.query(
+          'INSERT INTO sales_orders(user_id,username,chat_id,message_id,plan_id,plan_title,price_text,contact_method) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id',
+          [q.from.id,q.from.username||null,q.message.chat.id,q.message.message_id,p.id,p.title,p.price_text,(method+' via '+via)]
+        ).catch(()=>({rows:[]}));
+        const oid=o.rows[0]?.id;
+        const methodName=method==='bkash'?'bKash':'Nagad';
+        await ownerAlert('🛒 NEW ORDER'+(oid?' #'+oid:'')+'\n\nUser: '+q.from.id+' '+(q.from.username?'@'+q.from.username:'')+'\nPlan: '+p.title+'\nPrice: '+p.price_text+'\nPayment: '+methodName+'\nContact: '+(via==='telegram'?'Telegram':'WhatsApp'));
+        const msgText='Mahadi Tools Premium order\nPlan: '+p.title+'\nPrice: '+p.price_text+'\nPayment: '+methodName+(oid?'\nOrder ID: #'+oid:'');
+        if(via==='telegram'){
+          const tg=(await getSetting('contact_telegram',OWNER_USERNAME)).replace(/^@/,'');
+          return bot.sendMessage(q.message.chat.id,
+            '✅ '+methodName+' selected'+(oid?' • Order #'+oid:'')+'\n\nকোনো payment number এখানে দেখানো হবে না। Owner-এর সাথে Telegram-এ কথা বলে payment details নিন.',
+            {reply_markup:{inline_keyboard:[[{text:'✈️ Message Owner on Telegram',url:'https://t.me/'+tg}]]}}
+          );
+        }
+        const wa=(await getSetting('contact_whatsapp','')).replace(/[^0-9]/g,'');
+        if(!wa)return bot.sendMessage(q.message.chat.id,'📱 WhatsApp এখন available নয়। Telegram ব্যবহার করুন।');
+        return bot.sendMessage(q.message.chat.id,
+          '✅ '+methodName+' selected'+(oid?' • Order #'+oid:'')+'\n\nকোনো payment number এখানে দেখানো হবে না। Owner-এর সাথে WhatsApp-এ কথা বলে payment details নিন.',
+          {reply_markup:{inline_keyboard:[[{text:'📱 Message Owner on WhatsApp',url:'https://wa.me/'+wa+'?text='+encodeURIComponent(msgText)}]]}}
+        );
+      }
       if(d.indexOf('pub_tgplan_')===0){
         const id=Number(d.replace('pub_tgplan_',''));
         const r=await pool.query('SELECT * FROM subscription_plans WHERE id=$1',[id]);
@@ -304,8 +346,7 @@ module.exports = function setupGroupFeatures(ctx) {
         return bot.sendMessage(q.message.chat.id,'✅ Order'+(oid?' #'+oid:'')+' তৈরি হয়েছে।\n'+(oid?'Payment screenshot দিতে: /proof '+oid+'\n':'')+'নিচের button দিয়ে WhatsApp খুলুন।',{reply_markup:{inline_keyboard:[[{text:'📱 Open WhatsApp',url:'https://wa.me/'+wa+'?text='+text}]]}});
       }
       if(d==='pub_payment'){
-        const info=await getSetting('payment_info','');
-        return bot.sendMessage(q.message.chat.id,info?'💳 PAYMENT INFO\n\n'+info:'💳 Payment information এখনো set করা হয়নি।');
+        return bot.sendMessage(q.message.chat.id,'💳 Payment number bot-এ দেখানো হয় না।\n\nPlan আবার select করে 💗 bKash অথবা 🟠 Nagad চাপুন, তারপর WhatsApp/Telegram দিয়ে Owner-কে message দিন.');
       }
       return;
     }
