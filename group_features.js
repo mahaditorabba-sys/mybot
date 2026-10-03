@@ -35,6 +35,11 @@ module.exports = function setupGroupFeatures(ctx) {
     for (const p of plans) {
       await pool.query('INSERT INTO subscription_plans(code,title,price_text,details) VALUES($1,$2,$3,$4) ON CONFLICT(code) DO NOTHING',p);
     }
+    const oneYearPriceMigration = await getSetting('migration_1y_price_1000','false');
+    if (oneYearPriceMigration !== 'true') {
+      await pool.query("UPDATE subscription_plans SET price_text='1000৳' WHERE code='1y'");
+      await setSetting('migration_1y_price_1000','true');
+    }
     const replies = [
       ['device change','📱 Device change করতে /devicechange লিখে আপনার account/device details দিন। Password public group-এ দেবেন না।'],
       ['device full','📱 Device Full দেখালে Owner-এর সাথে যোগাযোগ করুন। প্রয়োজন হলে পুরোনো device reset করে নতুন device activate করা হবে।'],
