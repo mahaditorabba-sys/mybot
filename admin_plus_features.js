@@ -582,14 +582,14 @@ module.exports = function setupAdminPlus(ctx) {
         if(ms<=0){
           await pool.query("UPDATE subscriptions SET status='expired' WHERE id=$1",[s.id]);
           if(!s.expired_notice){
-            try { await bot.sendMessage(Number(s.user_id),'⏳ আপনার '+(s.plan_title||'Premium')+' subscription expire হয়েছে।'); } catch {}
+            try { await bot.sendMessage(Number(s.user_id),'⏳ আপনার '+(s.plan_title||'Premium')+' subscription expire হয়েছে।',{reply_markup:{inline_keyboard:[[{text:'🔄 Renew Premium',callback_data:'cust_renew'}],[{text:'👤 Customer Menu',callback_data:'cust_menu'}]]}}); } catch {}
             await pool.query("UPDATE subscriptions SET expired_notice=TRUE WHERE id=$1",[s.id]);
           }
         } else if(ms<=86400000 && !s.reminded_1d){
-          try { await bot.sendMessage(Number(s.user_id),'⏳ আপনার '+(s.plan_title||'Premium')+' subscription প্রায় ১ দিনের মধ্যে expire হবে।'); } catch {}
+          try { await bot.sendMessage(Number(s.user_id),'⏳ আপনার '+(s.plan_title||'Premium')+' subscription প্রায় ১ দিনের মধ্যে expire হবে।',{reply_markup:{inline_keyboard:[[{text:'🔄 Renew Premium',callback_data:'cust_renew'}],[{text:'⏳ My Subscription',callback_data:'cust_sub'}]]}}); } catch {}
           await pool.query("UPDATE subscriptions SET reminded_1d=TRUE WHERE id=$1",[s.id]);
         } else if(ms<=259200000 && !s.reminded_3d){
-          try { await bot.sendMessage(Number(s.user_id),'⏳ আপনার '+(s.plan_title||'Premium')+' subscription প্রায় ৩ দিনের মধ্যে expire হবে।'); } catch {}
+          try { await bot.sendMessage(Number(s.user_id),'⏳ আপনার '+(s.plan_title||'Premium')+' subscription প্রায় ৩ দিনের মধ্যে expire হবে।',{reply_markup:{inline_keyboard:[[{text:'🔄 Renew Premium',callback_data:'cust_renew'}],[{text:'⏳ My Subscription',callback_data:'cust_sub'}]]}}); } catch {}
           await pool.query("UPDATE subscriptions SET reminded_3d=TRUE WHERE id=$1",[s.id]);
         }
       }
