@@ -28,6 +28,16 @@ function isOwner(msg) {
   return false;
 }
 
+function isOwnerUser(user) {
+  const username = (user?.username || '').toLowerCase();
+  if (ownerId && user?.id === ownerId) return true;
+  if (username && username === OWNER_USERNAME) {
+    ownerId = user.id;
+    return true;
+  }
+  return false;
+}
+
 const mainKeyboard = {
   reply_markup: {
     inline_keyboard: [
@@ -74,7 +84,7 @@ bot.onText(/^\/post(?:@\w+)?$/, async (msg) => {
 
 bot.on('callback_query', async (q) => {
   const msg = q.message;
-  if (!msg || !isOwner(msg)) {
+  if (!msg || !isOwnerUser(q.from)) {
     return bot.answerCallbackQuery(q.id, { text: 'Owner only', show_alert: true });
   }
   await bot.answerCallbackQuery(q.id);
