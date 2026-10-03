@@ -23,8 +23,8 @@ const sessions = new Map();
 let ownerId = null;
 
 
-app.get('/', (_, res) => res.send('Mahadi Tools Assistant v4 is running'));
-app.get('/health', (_, res) => res.json({ ok: true, bot: 'Mahadi Tools Assistant', version: '4.0.0' }));
+app.get('/', (_, res) => res.send('Mahadi Tools Assistant v5 is running'));
+app.get('/health', (_, res) => res.json({ ok: true, bot: 'Mahadi Tools Assistant', version: '5.0.0' }));
 app.listen(PORT, () => console.log('Health server listening on', PORT));
 
 async function initDb() {
@@ -100,7 +100,7 @@ async function initDb() {
   }
   const savedOwner = await pool.query("SELECT value FROM settings WHERE key='owner_id'");
   const savedOwnerId = savedOwner.rows[0]?.value;
-  if (savedOwnerId && /^\\d+$/.test(String(savedOwnerId))) {
+  if (savedOwnerId && /^\d+$/.test(String(savedOwnerId))) {
     ownerId = Number(savedOwnerId);
   }
 }
@@ -643,4 +643,4 @@ setupCustomerPortal({
 });
 
 bot.on('polling_error',err=>console.error('Polling error:',err.message));
-console.log('Mahadi Tools Assistant v4 booted');
+console.log('Mahadi Tools Assistant v5 booted');
