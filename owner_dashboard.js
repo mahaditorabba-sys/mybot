@@ -14,7 +14,7 @@ module.exports = function setupOwnerDashboard(ctx) {
     const [
       users,totalOrders,pendingOrders,paidOrders,activatedOrders,todayOrders,
       pendingProofs,activeSubs,expiringSubs,openTickets,pendingDevices,scheduled,
-      notice,status
+      notice,status,forceJoin
     ] = await Promise.all([
       count("SELECT COUNT(*)::int n FROM tracked_users"),
       count("SELECT COUNT(*)::int n FROM sales_orders"),
@@ -29,7 +29,8 @@ module.exports = function setupOwnerDashboard(ctx) {
       count("SELECT COUNT(*)::int n FROM device_requests WHERE status='pending'"),
       count("SELECT COUNT(*)::int n FROM scheduled_posts WHERE status='pending'"),
       getSetting('customer_announcement',''),
-      getSetting('service_status','online')
+      getSetting('service_status','online'),
+      getSetting('force_join_channel','true')
     ]);
 
     const actionNeeded=pendingOrders+pendingProofs+openTickets+pendingDevices;
@@ -47,14 +48,18 @@ module.exports = function setupOwnerDashboard(ctx) {
       '📸 Pending Proofs: '+pendingProofs+'\n'+
       '🎫 Open Tickets: '+openTickets+'\n'+
       '📱 Device Requests: '+pendingDevices+'\n'+
-      '⏰ Scheduled Posts: '+scheduled+'\n\n'+
+      '⏰ Scheduled Posts: '+scheduled+'\n'+
+      '🔐 Force Join: '+(forceJoin==='true'?'ON ✅':'OFF ❌')+'\n\n'+
       '🚨 Action Needed: '+actionNeeded+
       (notice?'\n\n📣 Customer Notice: '+notice:'\n\n📣 Customer Notice: OFF'),
       {reply_markup:{inline_keyboard:[
+        [{text:'👮 Quick User Control',callback_data:'adv_user_search'},{text:'💰 Sales Report',callback_data:'adv_sales'}],
+        [{text:'⏳ Expiry Center',callback_data:'adv_expiry'},{text:'📣 Broadcast',callback_data:'biz_broadcast'}],
+        [{text:'🔐 Toggle Force Join',callback_data:'adv_forcejoin'},{text:'📢 Customer Notice',callback_data:'dash_notice'}],
         [{text:'🛒 Orders',callback_data:'biz_orders'},{text:'📸 Payment Proofs',callback_data:'plus_proofs'}],
         [{text:'💎 Subscriptions',callback_data:'plus_subs'},{text:'🎫 Tickets',callback_data:'grp_tickets'}],
         [{text:'📱 Device Requests',callback_data:'biz_devices'},{text:'👥 Users',callback_data:'user_tracker'}],
-        [{text:'📢 Customer Notice',callback_data:'dash_notice'},{text:'👁 Customer Preview',callback_data:'cust_preview_owner'}],
+        [{text:'👁 Customer Preview',callback_data:'cust_preview_owner'}],
         [{text:'🔄 Refresh Dashboard',callback_data:'dash_home'}],
         [{text:'⬅️ Main Panel',callback_data:'main_panel'}]
       ]}}
