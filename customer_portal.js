@@ -25,7 +25,7 @@ module.exports = function setupCustomerPortal(ctx) {
     const [orders,latestOrder,sub,tickets,devices,announcement,status] = await Promise.all([
       pool.query("SELECT COUNT(*)::int n FROM sales_orders WHERE user_id=$1",[user.id]).catch(()=>({rows:[{n:0}]})),
       pool.query("SELECT id,status,plan_title FROM sales_orders WHERE user_id=$1 ORDER BY id DESC LIMIT 1",[user.id]).catch(()=>({rows:[]})),
-      pool.query("SELECT id,status,expires_at,plan_title FROM subscriptions WHERE user_id=$1 ORDER BY id DESC LIMIT 1",[user.id]).catch(()=>({rows:[]})),
+      pool.query("SELECT s.id,s.status,s.expires_at,s.plan_title,o.plan_id FROM subscriptions s LEFT JOIN sales_orders o ON o.id=s.order_id WHERE s.user_id=$1 ORDER BY s.id DESC LIMIT 1",[user.id]).catch(()=>({rows:[]})),
       pool.query("SELECT COUNT(*)::int n FROM support_tickets WHERE user_id=$1 AND status='open'",[user.id]).catch(()=>({rows:[{n:0}]})),
       pool.query("SELECT COUNT(*)::int n FROM device_requests WHERE user_id=$1 AND status='pending'",[user.id]).catch(()=>({rows:[{n:0}]})),
       getSetting('customer_announcement',''),
@@ -39,6 +39,7 @@ module.exports = function setupCustomerPortal(ctx) {
       subText=active?'✅ '+(s.plan_title||'Premium')+' • '+remainingText(s.expires_at):'❌ Expired';
     }
     const notice=announcement ? '\n📢 NOTICE\n'+announcement+'\n' : '';
+    const renewCb=s?.plan_id?'pub_plan_'+s.plan_id:'cust_renew';
     return bot.sendMessage(chatId,
       '🏠 MAHADI TOOLS — CUSTOMER DASHBOARD\n\n'+
       '👋 '+(user.first_name||'Customer')+'\n'+
@@ -55,7 +56,7 @@ module.exports = function setupCustomerPortal(ctx) {
         [{text:'💎 Buy Premium',callback_data:'cust_plans'},{text:'🔄 Refresh',callback_data:'cust_menu'}],
         [{text:'📦 My Orders',callback_data:'cust_orders'},{text:'⏳ My Subscription',callback_data:'cust_sub'}],
         [{text:'📱 Device Change',callback_data:'cust_device'},{text:'🎫 Support',callback_data:'cust_support'}],
-        [{text:'🔄 Renew Premium',callback_data:'cust_renew'},{text:'☎️ Official Contact',callback_data:'cust_contact'}]
+        [{text:'🔄 Renew Premium',callback_data:renewCb},{text:'☎️ Official Contact',callback_data:'cust_contact'}]
       ]}}
     );
   }
@@ -172,6 +173,7 @@ module.exports = function setupCustomerPortal(ctx) {
       });
     }
     const active=s.status==='active' && new Date(s.expires_at).getTime()>Date.now();
+    const renewCb=s.plan_id?'pub_plan_'+s.plan_id:'cust_renew';
     return bot.sendMessage(chatId,
       '⏳ MY SUBSCRIPTION\n\n'+
       'Plan: '+(s.plan_title||'Premium')+'\n'+
@@ -180,7 +182,8 @@ module.exports = function setupCustomerPortal(ctx) {
       'Expires: '+new Date(s.expires_at).toLocaleString('en-GB',{timeZone:'Asia/Muscat'})+'\n'+
       'Remaining: '+remainingText(s.expires_at),
       {reply_markup:{inline_keyboard:[
-        [{text:'🔄 Renew Premium',callback_data:'cust_renew'}],
+        [{text:'🔄 Renew Same Plan',callback_data:renewCb}],
+        [{text:'💎 Other Plans',callback_data:'cust_plans'}],
         [{text:'📦 My Orders',callback_data:'cust_orders'},{text:'⬅️ Customer Menu',callback_data:'cust_menu'}]
       ]}}
     );
