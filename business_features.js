@@ -143,7 +143,7 @@ module.exports = function setupBusinessFeatures(ctx) {
 
     if (d==='biz_payment') {
       return bot.sendMessage(chatId,
-        '💳 PAYMENT METHODS\n\n💗 bKash\n🟠 Nagad\n\n🔒 Customer-এর কাছে কোনো payment number দেখানো হবে না।\nPlan select → bKash/Nagad → WhatsApp/Telegram → Owner-এর সাথে message.'
+        '💳 PAYMENT METHODS\n\n💗 bKash\n🟠 Nagad\n\n🔒 Customer-এর কাছে কোনো payment number দেখানো হবে না।\nPlan select → WhatsApp/Telegram → bKash/Nagad → ready-made message → Send.'
       );
     }
 
