@@ -657,7 +657,7 @@ setupAdvancedFeatures({
 });
 
 setupGiveawayBuilder({
-  bot, pool, isOwnerUser, getSetting, CHANNEL, TOKEN
+  bot, pool, isOwnerUser, getSetting, CHANNEL, TOKEN, OWNER_USERNAME
 });
 
 bot.on('polling_error',err=>console.error('Polling error:',err.message));
