@@ -81,6 +81,7 @@ module.exports = function setupGroupFeatures(ctx) {
       {command:'salesreport',description:'Owner sales report'},
       {command:'expiry',description:'Owner expiry center'},
       {command:'post',description:'Create channel post'},
+      {command:'giveaway',description:'Owner giveaway post builder'},
       {command:'bindgroup',description:'Owner: connect group'},
       {command:'groupsettings',description:'Owner: group security panel'},
       {command:'analytics',description:'Owner: analytics'},
