@@ -115,7 +115,7 @@ module.exports = function setupGiveawayBuilder(ctx) {
       reply_markup:{inline_keyboard:[
         [{text:'📢 Channel Now',callback_data:'give_pub_channel'},{text:'👥 Group Now',callback_data:'give_pub_group'}],
         [{text:'📢 Channel + Group Now',callback_data:'give_pub_both'}],
-        [{text:'⏰ Today 6:00 PM Oman',callback_data:'give_sched6'}],
+        [{text:'⏰ 6:00 PM Oman',callback_data:'give_sched6'}],
         [{text:'🕒 Custom Schedule',callback_data:'give_sched_custom'},{text:'📋 Scheduled',callback_data:'give_scheduled'}],
         [{text:'✏️ Edit Again',callback_data:'give_start'},{text:'❌ Cancel',callback_data:'give_cancel'}]
       ]}
@@ -205,9 +205,19 @@ module.exports = function setupGiveawayBuilder(ctx) {
     if(d==='give_pub_group') return publish(chatId,q.from.id,'group');
     if(d==='give_pub_both') return publish(chatId,q.from.id,'both');
     if(d==='give_sched6'){
+      const s=sessions.get(q.from.id);
+      if(!s || s.step!=='ready') return bot.sendMessage(chatId,'আগে Giveaway বানিয়ে Preview পর্যন্ত যান।');
       let when=omanDateAt(18,0);
       if(when.getTime()<=Date.now()) when=new Date(when.getTime()+86400000);
-      return schedule(chatId,q.from.id,when,'channel');
+      s.step='schedule_target'; s.when=when; sessions.set(q.from.id,s);
+      return bot.sendMessage(chatId,
+        '⏰ Schedule time: '+when.toLocaleString('en-GB',{timeZone:'Asia/Muscat'})+' Oman\n\nকোথায় যাবে?',{
+          reply_markup:{inline_keyboard:[
+            [{text:'📢 Channel',callback_data:'give_target_channel'},{text:'👥 Group',callback_data:'give_target_group'}],
+            [{text:'📢 Channel + Group',callback_data:'give_target_both'}]
+          ]}
+        }
+      );
     }
     if(d==='give_sched_custom'){
       const s=sessions.get(q.from.id);
