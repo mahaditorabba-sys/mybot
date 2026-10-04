@@ -7,6 +7,7 @@ const setupAdminPlus = require('./admin_plus_features');
 const setupCustomerPortal = require('./customer_portal');
 const setupOwnerDashboard = require('./owner_dashboard');
 const setupAdvancedFeatures = require('./advanced_features');
+const setupGiveawayBuilder = require('./giveaway_builder');
 
 const TOKEN = process.env.BOT_TOKEN;
 const OWNER_USERNAME = (process.env.OWNER_USERNAME || 'Mahadihasanrony11').replace(/^@/, '').toLowerCase();
@@ -25,8 +26,8 @@ const sessions = new Map();
 let ownerId = null;
 
 
-app.get('/', (_, res) => res.send('Mahadi Tools Assistant v5.2 is running'));
-app.get('/health', (_, res) => res.json({ ok: true, bot: 'Mahadi Tools Assistant', version: '5.2.0' }));
+app.get('/', (_, res) => res.send('Mahadi Tools Assistant v5.3 is running'));
+app.get('/health', (_, res) => res.json({ ok: true, bot: 'Mahadi Tools Assistant', version: '5.3.0' }));
 app.listen(PORT, () => console.log('Health server listening on', PORT));
 
 async function initDb() {
@@ -193,6 +194,7 @@ const mainKeyboard = {
   reply_markup: { inline_keyboard: [
     [{text:'📊 Owner Dashboard',callback_data:'dash_home'},{text:'👁 Customer Preview',callback_data:'cust_preview_owner'}],
     [{text:'📣 নতুন পোস্ট',callback_data:'new_post'},{text:'⚡ Quick Post',callback_data:'quick_post'}],
+    [{text:'🎁 Giveaway Builder',callback_data:'give_start'}],
     [{text:'⏰ Schedule',callback_data:'scheduled_menu'},{text:'🗂 Drafts',callback_data:'drafts_menu'}],
     [{text:'🧩 Inline Buttons',callback_data:'buttons_info'},{text:'📌 Auto Pin',callback_data:'toggle_autopin'}],
     [{text:'🛠 Post Tools',callback_data:'post_tools'},{text:'📊 History',callback_data:'history'}],
@@ -332,7 +334,7 @@ bot.onText(/^\/status(?:@\w+)?$/, async msg=>{
 });
 
 bot.on('callback_query', async q=>{
-  if (q.data && (q.data.startsWith('pub_') || q.data.startsWith('biz_') || q.data.startsWith('plus_') || q.data.startsWith('cust_') || q.data.startsWith('dash_') || q.data.startsWith('adv_'))) return;
+  if (q.data && (q.data.startsWith('pub_') || q.data.startsWith('biz_') || q.data.startsWith('plus_') || q.data.startsWith('cust_') || q.data.startsWith('dash_') || q.data.startsWith('adv_') || q.data.startsWith('give_'))) return;
   const msg=q.message;
   if (q.from) await trackUser(q.from,{chatId:msg?.chat?.id,chatType:msg?.chat?.type});
   if(!msg || !isOwnerUser(q.from)) return bot.answerCallbackQuery(q.id,{text:'Owner only',show_alert:true});
@@ -654,5 +656,9 @@ setupAdvancedFeatures({
   bot, pool, isOwnerUser, getSetting, setSetting
 });
 
+setupGiveawayBuilder({
+  bot, isOwnerUser, getSetting, CHANNEL
+});
+
 bot.on('polling_error',err=>console.error('Polling error:',err.message));
-console.log('Mahadi Tools Assistant v5.2 booted');
+console.log('Mahadi Tools Assistant v5.3 booted');
