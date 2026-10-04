@@ -27,6 +27,10 @@ module.exports = function setupGiveawayBuilder(ctx) {
 
   function publishKeyboard(d) {
     return { inline_keyboard: [
+      [
+        { text:'📧 Copy Email', copy_text:{ text:d.email } },
+        { text:'🔑 Copy Password', copy_text:{ text:d.accessKey } }
+      ],
       [{ text:'🌐 Open Mahadi Tools', url:d.url }]
     ]};
   }
