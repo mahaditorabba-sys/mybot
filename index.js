@@ -26,8 +26,8 @@ const sessions = new Map();
 let ownerId = null;
 
 
-app.get('/', (_, res) => res.send('Mahadi Tools Assistant v5.4 is running'));
-app.get('/health', (_, res) => res.json({ ok: true, bot: 'Mahadi Tools Assistant', version: '5.4.0' }));
+app.get('/', (_, res) => res.send('Mahadi Tools Assistant v5.5 is running'));
+app.get('/health', (_, res) => res.json({ ok: true, bot: 'Mahadi Tools Assistant', version: '5.5.0' }));
 app.listen(PORT, () => console.log('Health server listening on', PORT));
 
 async function initDb() {
@@ -661,4 +661,4 @@ setupGiveawayBuilder({
 });
 
 bot.on('polling_error',err=>console.error('Polling error:',err.message));
-console.log('Mahadi Tools Assistant v5.4 booted');
+console.log('Mahadi Tools Assistant v5.5 booted');
