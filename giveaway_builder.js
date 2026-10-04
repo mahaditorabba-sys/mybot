@@ -98,19 +98,29 @@ module.exports = function setupGiveawayBuilder(ctx) {
     sessions.set(userId,{step:'title',data:{}});
     return bot.sendMessage(chatId,
       '🎁 GIVEAWAY BUILDER\n\n' +
-      'Ready-made giveaway post বানাবেন।\n' +
-      'প্রথমে উপরের TITLE লিখুন।\n\n' +
-      'Example: 🎉 5,000 MEMBERS COMPLETE!'
+      'Ready-made giveaway post বানাবেন।\n\n' +
+      '✅ একেকটা field আলাদা করে দিতে পারেন\n' +
+      '✅ অথবা পুরো giveaway লেখা একবারে paste করতে পারেন\n' +
+      '✅ Poster image-ও পাঠাতে পারেন\n\n' +
+      'প্রথমে TITLE/পুরো post/ছবি পাঠান।'
     );
   }
 
   async function preview(chatId,userId) {
     const s=sessions.get(userId);
     if(!s) return;
-    await bot.sendMessage(chatId,'👁 PREVIEW\n\n'+buildText(s.data),{
-      disable_web_page_preview:true,
-      reply_markup:publishKeyboard(s.data)
-    });
+    const previewText='👁 PREVIEW\n\n'+buildText(s.data);
+    if(s.data.posterFileId){
+      await bot.sendPhoto(chatId,s.data.posterFileId,{
+        caption:previewText.slice(0,1024),
+        reply_markup:publishKeyboard(s.data)
+      });
+    } else {
+      await bot.sendMessage(chatId,previewText,{
+        disable_web_page_preview:true,
+        reply_markup:publishKeyboard(s.data)
+      });
+    }
     return bot.sendMessage(chatId,'এখন Publish অথবা Schedule করুন:',{
       reply_markup:{inline_keyboard:[
         [{text:'📢 Channel Now',callback_data:'give_pub_channel'},{text:'👥 Group Now',callback_data:'give_pub_group'}],
@@ -123,7 +133,14 @@ module.exports = function setupGiveawayBuilder(ctx) {
   }
 
   async function sendTo(target,data) {
-    return bot.sendMessage(target,buildText(data),{
+    const text=buildText(data);
+    if(data.posterFileId){
+      return bot.sendPhoto(target,data.posterFileId,{
+        caption:text.slice(0,1024),
+        reply_markup:publishKeyboard(data)
+      });
+    }
+    return bot.sendMessage(target,text,{
       disable_web_page_preview:true,
       reply_markup:publishKeyboard(data)
     });
@@ -184,6 +201,43 @@ module.exports = function setupGiveawayBuilder(ctx) {
     });
   }
 
+  function nextValue(lines,labelRx) {
+    for(let i=0;i<lines.length;i++){
+      const line=lines[i].trim();
+      if(!labelRx.test(line)) continue;
+      const same=line.replace(labelRx,'').replace(/^[\s|:=-]+/,'').trim();
+      if(same) return same;
+      for(let j=i+1;j<Math.min(lines.length,i+4);j++){
+        const n=lines[j].trim().replace(/^[|:\-]+/,'').trim();
+        if(n && !/^(EMAIL|PASSWORD|DEVICE|DEVICES|VALIDITY|WEBSITE|MAHADI TOOLS)$/i.test(n)) return n;
+      }
+    }
+    return '';
+  }
+
+  function parseFullGiveaway(text) {
+    const raw=String(text||'').trim();
+    if(!raw) return null;
+    const lines=raw.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+    const email=(raw.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)||[])[0]||'';
+    const url=(raw.match(/https?:\/\/[^\s]+/i)||[])[0]||'';
+    const password=nextValue(lines,/^(?:🔑\s*)?PASSWORD\b/i);
+    const device=nextValue(lines,/^(?:📱\s*)?DEVICES?\b/i);
+    const validity=nextValue(lines,/^(?:⏳\s*)?VALIDITY\b/i);
+    const title=lines.find(x=>/GIVEAWAY/i.test(x) && !/GIVEAWAY ACCESS/i.test(x)) || lines[0] || 'MAHADI TOOLS GIVEAWAY';
+    const intro=lines.find(x=>/GIVEAWAY ACCESS/i.test(x)) || 'GIVEAWAY ACCESS';
+    if(!email || !password || !device || !validity || !url) return null;
+    return {title,intro,email,accessKey:password,device,validity,url};
+  }
+
+  function mergeParsed(session,parsed) {
+    const keepPoster=session.data?.posterFileId;
+    session.data={...parsed};
+    if(keepPoster) session.data.posterFileId=keepPoster;
+    session.step='ready';
+    return session;
+  }
+
   bot.onText(/^\/giveaway(?:@\w+)?$/, async msg=>{
     if(!isOwnerUser(msg.from) || msg.chat.type!=='private') return;
     return start(msg.chat.id,msg.from.id);
@@ -236,9 +290,42 @@ module.exports = function setupGiveawayBuilder(ctx) {
   bot.on('message', async msg=>{
     if(!msg.from || !isOwnerUser(msg.from) || msg.chat.type!=='private') return;
     const s=sessions.get(msg.from.id);
-    if(!s || !msg.text || msg.text.startsWith('/')) return;
+    if(!s) return;
+
+    // Save poster image at any point in the builder.
+    if(msg.photo?.length){
+      s.data=s.data||{};
+      s.data.posterFileId=msg.photo[msg.photo.length-1].file_id;
+      sessions.set(msg.from.id,s);
+      const cap=(msg.caption||'').trim();
+      if(cap){
+        const parsed=parseFullGiveaway(cap);
+        if(parsed){
+          mergeParsed(s,parsed);
+          sessions.set(msg.from.id,s);
+          await bot.sendMessage(msg.chat.id,'✅ Poster + পুরো Giveaway text বুঝেছি। Preview দেখাচ্ছি।');
+          return preview(msg.chat.id,msg.from.id);
+        }
+      }
+      return bot.sendMessage(msg.chat.id,
+        '✅ Giveaway poster saved.\n\nএখন পুরো giveaway লেখা একবারে paste করুন, অথবা আগের মতো step-by-step info দিন।'
+      );
+    }
+
+    if(!msg.text || msg.text.startsWith('/')) return;
     const v=msg.text.trim();
     if(!v) return;
+
+    // At any normal data-entry step, accept a full pasted template in one go.
+    if(['title','intro','email','access','device','validity','url'].includes(s.step)){
+      const parsed=parseFullGiveaway(v);
+      if(parsed){
+        mergeParsed(s,parsed);
+        sessions.set(msg.from.id,s);
+        await bot.sendMessage(msg.chat.id,'✅ পুরো Giveaway post auto-detect হয়েছে।');
+        return preview(msg.chat.id,msg.from.id);
+      }
+    }
 
     if(s.step==='title'){
       s.data.title=v; s.step='intro'; sessions.set(msg.from.id,s);
