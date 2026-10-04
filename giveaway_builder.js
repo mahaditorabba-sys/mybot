@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 
 module.exports = function setupGiveawayBuilder(ctx) {
-  const { bot, pool, isOwnerUser, getSetting, CHANNEL, TOKEN } = ctx;
+  const { bot, pool, isOwnerUser, getSetting, CHANNEL, TOKEN, OWNER_USERNAME } = ctx;
   const sessions = new Map();
 
   function key() {
@@ -60,10 +60,14 @@ module.exports = function setupGiveawayBuilder(ctx) {
   function publishKeyboard(d) {
     const text=buildText(d);
     const rows=[];
-    const username=(text.match(/@([A-Za-z0-9_]{5,})/)||[])[1];
     const urls=text.match(/https?:\/\/[^\s]+/gi)||[];
+    const directTelegram=urls.map(x=>x.replace(/[),.]+$/,'')).find(x=>/^https?:\/\/(?:www\.)?t\.me\/[A-Za-z0-9_]{5,}$/i.test(x));
+    const mentionMatches=[...text.matchAll(/(^|[\s(>:\-])@([A-Za-z0-9_]{5,})\b/gm)];
+    const mention=mentionMatches.length ? mentionMatches[mentionMatches.length-1][2] : '';
+    const username=(directTelegram ? directTelegram.split('/').pop() : '') || mention || OWNER_USERNAME;
     const website=urls.find(x=>!/^https?:\/\/(?:www\.)?t\.me\//i.test(x));
-    if(username) rows.push([{text:'✈️ Telegram Inbox',url:'https://t.me/'+username}]);
+
+    if(username) rows.push([{text:'✈️ Telegram Inbox',url:'https://t.me/'+String(username).replace(/^@/,'')}]);
     if(website) rows.push([{text:'🌐 Website',url:website.replace(/[),.]+$/,'')}]);
     if(!d.rawText && d.email && d.accessKey){
       rows.unshift([
