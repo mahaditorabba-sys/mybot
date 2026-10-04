@@ -34,36 +34,44 @@ module.exports = function setupGiveawayBuilder(ctx) {
   }
 
   function buildText(d) {
+    if(d.rawText) return d.rawText;
     return [
       '🎁 ' + (d.title || 'MAHADI TOOLS GIVEAWAY'),
       '',
       d.intro || 'GIVEAWAY ACCESS',
       '',
       '📧 EMAIL',
-      d.email,
+      d.email || '',
       '',
       '🔑 PASSWORD',
-      d.accessKey,
+      d.accessKey || '',
       '',
       '📱 DEVICE',
-      d.device,
+      d.device || '',
       '',
       '⏳ VALIDITY',
-      d.validity,
+      d.validity || '',
       '',
       '🌐 MAHADI TOOLS',
-      d.url
+      d.url || ''
     ].join('\n');
   }
 
   function publishKeyboard(d) {
-    return { inline_keyboard: [
-      [
-        { text:'📧 Copy Email', copy_text:{ text:d.email } },
-        { text:'🔑 Copy Password', copy_text:{ text:d.accessKey } }
-      ],
-      [{ text:'🌐 Open Mahadi Tools', url:d.url }]
-    ]};
+    const text=buildText(d);
+    const rows=[];
+    const username=(text.match(/@([A-Za-z0-9_]{5,})/)||[])[1];
+    const urls=text.match(/https?:\/\/[^\s]+/gi)||[];
+    const website=urls.find(x=>!/^https?:\/\/(?:www\.)?t\.me\//i.test(x));
+    if(username) rows.push([{text:'✈️ Telegram Inbox',url:'https://t.me/'+username}]);
+    if(website) rows.push([{text:'🌐 Website',url:website.replace(/[),.]+$/,'')}]);
+    if(!d.rawText && d.email && d.accessKey){
+      rows.unshift([
+        {text:'📧 Copy Email',copy_text:{text:d.email}},
+        {text:'🔑 Copy Password',copy_text:{text:d.accessKey}}
+      ]);
+    }
+    return rows.length ? {inline_keyboard:rows} : undefined;
   }
 
   function omanDateAt(hour,minute) {
@@ -95,31 +103,35 @@ module.exports = function setupGiveawayBuilder(ctx) {
   }
 
   async function start(chatId,userId) {
-    sessions.set(userId,{step:'title',data:{}});
+    sessions.set(userId,{step:'await_content',data:{}});
     return bot.sendMessage(chatId,
       '🎁 GIVEAWAY BUILDER\n\n' +
-      'Ready-made giveaway post বানাবেন।\n\n' +
-      '✅ একেকটা field আলাদা করে দিতে পারেন\n' +
-      '✅ অথবা পুরো giveaway লেখা একবারে paste করতে পারেন\n' +
-      '✅ Poster image-ও পাঠাতে পারেন\n\n' +
-      'প্রথমে TITLE/পুরো post/ছবি পাঠান।'
+      'একবারেই post তৈরি করুন।\n\n' +
+      '📸 Poster + পুরো লেখা caption হিসেবে একসাথে পাঠান।\n' +
+      'অথবা শুধু পুরো লেখাটা পাঠান।\n\n' +
+      'এরপর সরাসরি Preview + Publish/Schedule দেখাবে।'
     );
   }
 
   async function preview(chatId,userId) {
     const s=sessions.get(userId);
     if(!s) return;
-    const previewText='👁 PREVIEW\n\n'+buildText(s.data);
-    if(s.data.posterFileId){
-      await bot.sendPhoto(chatId,s.data.posterFileId,{
-        caption:previewText.slice(0,1024),
-        reply_markup:publishKeyboard(s.data)
-      });
+    const postText=buildText(s.data);
+    const previewText='👁 PREVIEW\n\n'+postText;
+    const kb=publishKeyboard(s.data);
+    if(s.data.posterFileId && previewText.length<=1024){
+      const opts={caption:previewText};
+      if(kb) opts.reply_markup=kb;
+      await bot.sendPhoto(chatId,s.data.posterFileId,opts);
+    } else if(s.data.posterFileId){
+      await bot.sendPhoto(chatId,s.data.posterFileId,{caption:'👁 PREVIEW'});
+      const opts={disable_web_page_preview:true};
+      if(kb) opts.reply_markup=kb;
+      await bot.sendMessage(chatId,postText,opts);
     } else {
-      await bot.sendMessage(chatId,previewText,{
-        disable_web_page_preview:true,
-        reply_markup:publishKeyboard(s.data)
-      });
+      const opts={disable_web_page_preview:true};
+      if(kb) opts.reply_markup=kb;
+      await bot.sendMessage(chatId,previewText,opts);
     }
     return bot.sendMessage(chatId,'এখন Publish অথবা Schedule করুন:',{
       reply_markup:{inline_keyboard:[
@@ -134,16 +146,21 @@ module.exports = function setupGiveawayBuilder(ctx) {
 
   async function sendTo(target,data) {
     const text=buildText(data);
-    if(data.posterFileId){
-      return bot.sendPhoto(target,data.posterFileId,{
-        caption:text.slice(0,1024),
-        reply_markup:publishKeyboard(data)
-      });
+    const kb=publishKeyboard(data);
+    if(data.posterFileId && text.length<=1024){
+      const opts={caption:text};
+      if(kb) opts.reply_markup=kb;
+      return bot.sendPhoto(target,data.posterFileId,opts);
     }
-    return bot.sendMessage(target,text,{
-      disable_web_page_preview:true,
-      reply_markup:publishKeyboard(data)
-    });
+    if(data.posterFileId){
+      await bot.sendPhoto(target,data.posterFileId);
+      const opts={disable_web_page_preview:true};
+      if(kb) opts.reply_markup=kb;
+      return bot.sendMessage(target,text,opts);
+    }
+    const opts={disable_web_page_preview:true};
+    if(kb) opts.reply_markup=kb;
+    return bot.sendMessage(target,text,opts);
   }
 
   async function publishData(data,where) {
@@ -292,73 +309,12 @@ module.exports = function setupGiveawayBuilder(ctx) {
     const s=sessions.get(msg.from.id);
     if(!s) return;
 
-    // Save poster image at any point in the builder.
-    if(msg.photo?.length){
-      s.data=s.data||{};
-      s.data.posterFileId=msg.photo[msg.photo.length-1].file_id;
-      sessions.set(msg.from.id,s);
-      const cap=(msg.caption||'').trim();
-      if(cap){
-        const parsed=parseFullGiveaway(cap);
-        if(parsed){
-          mergeParsed(s,parsed);
-          sessions.set(msg.from.id,s);
-          await bot.sendMessage(msg.chat.id,'✅ Poster + পুরো Giveaway text বুঝেছি। Preview দেখাচ্ছি।');
-          return preview(msg.chat.id,msg.from.id);
-        }
-      }
-      return bot.sendMessage(msg.chat.id,
-        '✅ Giveaway poster saved.\n\nএখন পুরো giveaway লেখা একবারে paste করুন, অথবা আগের মতো step-by-step info দিন।'
-      );
-    }
-
-    if(!msg.text || msg.text.startsWith('/')) return;
-    const v=msg.text.trim();
-    if(!v) return;
-
-    // At any normal data-entry step, accept a full pasted template in one go.
-    if(['title','intro','email','access','device','validity','url'].includes(s.step)){
-      const parsed=parseFullGiveaway(v);
-      if(parsed){
-        mergeParsed(s,parsed);
-        sessions.set(msg.from.id,s);
-        await bot.sendMessage(msg.chat.id,'✅ পুরো Giveaway post auto-detect হয়েছে।');
-        return preview(msg.chat.id,msg.from.id);
-      }
-    }
-
-    if(s.step==='title'){
-      s.data.title=v; s.step='intro'; sessions.set(msg.from.id,s);
-      return bot.sendMessage(msg.chat.id,'② Giveaway-এর ছোট লেখা/intro দিন।\nExample: GIVEAWAY ACCESS');
-    }
-    if(s.step==='intro'){
-      s.data.intro=v; s.step='email'; sessions.set(msg.from.id,s);
-      return bot.sendMessage(msg.chat.id,'③ EMAIL দিন।');
-    }
-    if(s.step==='email'){
-      s.data.email=v; s.step='access'; sessions.set(msg.from.id,s);
-      return bot.sendMessage(msg.chat.id,'④ PASSWORD দিন।');
-    }
-    if(s.step==='access'){
-      s.data.accessKey=v; s.step='device'; sessions.set(msg.from.id,s);
-      return bot.sendMessage(msg.chat.id,'⑤ DEVICE লিখুন।\nExample: 5 Devices');
-    }
-    if(s.step==='device'){
-      s.data.device=v; s.step='validity'; sessions.set(msg.from.id,s);
-      return bot.sendMessage(msg.chat.id,'⑥ VALIDITY লিখুন।\nExample: Remaining 5 Days 14 Hours');
-    }
-    if(s.step==='validity'){
-      s.data.validity=v; s.step='url'; sessions.set(msg.from.id,s);
-      return bot.sendMessage(msg.chat.id,'⑦ Website/link দিন।');
-    }
-    if(s.step==='url'){
-      if(!/^https?:\/\//i.test(v)) return bot.sendMessage(msg.chat.id,'Valid http/https link দিন।');
-      s.data.url=v; s.step='ready'; sessions.set(msg.from.id,s);
-      return preview(msg.chat.id,msg.from.id);
-    }
     if(s.step==='schedule_time'){
-      const when=parseOmanTime(v);
-      if(!when || isNaN(when.getTime()) || when.getTime()<=Date.now()) return bot.sendMessage(msg.chat.id,'সময় বুঝিনি। Example: 18:00 অথবা 2026-10-04 18:00');
+      if(!msg.text || msg.text.startsWith('/')) return;
+      const when=parseOmanTime(msg.text.trim());
+      if(!when || isNaN(when.getTime()) || when.getTime()<=Date.now()) {
+        return bot.sendMessage(msg.chat.id,'সময় বুঝিনি। Example: 18:00 অথবা 2026-10-04 18:00');
+      }
       s.step='schedule_target'; s.when=when; sessions.set(msg.from.id,s);
       return bot.sendMessage(msg.chat.id,'কোথায় scheduled post যাবে?',{
         reply_markup:{inline_keyboard:[
@@ -366,6 +322,33 @@ module.exports = function setupGiveawayBuilder(ctx) {
           [{text:'📢 Channel + Group',callback_data:'give_target_both'}]
         ]}
       });
+    }
+
+    if(msg.photo?.length){
+      s.data=s.data||{};
+      s.data.posterFileId=msg.photo[msg.photo.length-1].file_id;
+      const cap=(msg.caption||'').trim();
+      if(cap){
+        s.data.rawText=cap;
+        s.step='ready';
+        sessions.set(msg.from.id,s);
+        return preview(msg.chat.id,msg.from.id);
+      }
+      s.step='await_text_after_photo';
+      sessions.set(msg.from.id,s);
+      return bot.sendMessage(msg.chat.id,'✅ Poster পেয়েছি। এখন শুধু পুরো post লেখাটা একবারে পাঠান।');
+    }
+
+    if(!msg.text || msg.text.startsWith('/')) return;
+    const v=msg.text.trim();
+    if(!v) return;
+
+    if(s.step==='await_content' || s.step==='await_text_after_photo'){
+      s.data=s.data||{};
+      s.data.rawText=v;
+      s.step='ready';
+      sessions.set(msg.from.id,s);
+      return preview(msg.chat.id,msg.from.id);
     }
   });
 
