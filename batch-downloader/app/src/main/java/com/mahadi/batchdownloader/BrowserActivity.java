@@ -267,7 +267,7 @@ public class BrowserActivity extends Activity {
             org.json.JSONArray a = new org.json.JSONArray("[" + raw + "]");
             return a.getString(0);
         } catch (Exception e) {
-            return raw.replace("\\"", "\"").replace("\\\\", "\\");
+            return raw;
         }
     }
 
