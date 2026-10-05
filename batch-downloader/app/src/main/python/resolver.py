@@ -88,8 +88,229 @@ def _pick_progressive(info, quality):
         return info
     return None
 
+
+def _fb_video_id(url):
+    patterns = [
+        r"/reel/(\\d+)",
+        r"/videos/(?:[^/?#]+/)?(\\d+)",
+        r"[?&]v=(\\d+)",
+        r"story_fbid=(\\d+)",
+    ]
+    for p in patterns:
+        m = re.search(p, url, re.I)
+        if m:
+            return m.group(1)
+    return ""
+
+def _fb_clean_url(url):
+    vid = _fb_video_id(url)
+    if vid:
+        return f"https://www.facebook.com/reel/{vid}/"
+    try:
+        from urllib.parse import urlsplit, urlunsplit
+        p = urlsplit(url)
+        return urlunsplit((p.scheme or "https", p.netloc, p.path, "", ""))
+    except Exception:
+        return url.split("?")[0]
+
+def _decode_fb(s):
+    if not s:
+        return ""
+    s = htmlmod.unescape(str(s))
+    replacements = {
+        r"\\/": "/",
+        r"\\u0025": "%",
+        r"\\u0026": "&",
+        r"\\u003d": "=",
+        r"\\u003D": "=",
+        r"\\u003f": "?",
+        r"\\u003F": "?",
+        r"\\u002f": "/",
+        r"\\u002F": "/",
+        r"\\u003a": ":",
+        r"\\u003A": ":",
+    }
+    for a, b in replacements.items():
+        s = s.replace(a, b)
+    try:
+        s = bytes(s, "utf-8").decode("unicode_escape")
+    except Exception:
+        pass
+    return s.replace("\\/", "/").replace("&amp;", "&")
+
+def _fb_extract_fields_from_obj(node, found, depth=0):
+    if depth > 14 or node is None:
+        return
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k in (
+                "browser_native_hd_url", "playable_url_quality_hd",
+                "browser_native_sd_url", "playable_url",
+                "hd_src", "sd_src", "hdUrl", "sdUrl",
+                "progressive_url", "videoUrl"
+            ) and isinstance(v, str) and v.startswith(("http://", "https://")):
+                found.setdefault(k, _decode_fb(v))
+            _fb_extract_fields_from_obj(v, found, depth + 1)
+    elif isinstance(node, list):
+        for v in node[:200]:
+            _fb_extract_fields_from_obj(v, found, depth + 1)
+
+def _fb_extract_page(html, quality):
+    normalized = htmlmod.unescape(html or "")
+    found = {}
+
+    field_patterns = {
+        "browser_native_hd_url": [
+            r'"browser_native_hd_url"\\s*:\\s*"([^"]+)"',
+            r'browser_native_hd_url\\s*:\\s*"([^"]+)"',
+        ],
+        "playable_url_quality_hd": [
+            r'"playable_url_quality_hd"\\s*:\\s*"([^"]+)"',
+            r'playable_url_quality_hd\\s*:\\s*"([^"]+)"',
+        ],
+        "hd_src": [
+            r'"hd_src"\\s*:\\s*"([^"]+)"',
+            r'hd_src\\s*:\\s*"([^"]+)"',
+            r'"hdUrl"\\s*:\\s*"([^"]+)"',
+        ],
+        "browser_native_sd_url": [
+            r'"browser_native_sd_url"\\s*:\\s*"([^"]+)"',
+            r'browser_native_sd_url\\s*:\\s*"([^"]+)"',
+        ],
+        "playable_url": [
+            r'"playable_url"\\s*:\\s*"([^"]+)"',
+            r'playable_url\\s*:\\s*"([^"]+)"',
+        ],
+        "sd_src": [
+            r'"sd_src"\\s*:\\s*"([^"]+)"',
+            r'sd_src\\s*:\\s*"([^"]+)"',
+            r'"sdUrl"\\s*:\\s*"([^"]+)"',
+            r'"progressive_url"\\s*:\\s*"([^"]+)"',
+        ],
+    }
+    for key, pats in field_patterns.items():
+        for p in pats:
+            m = re.search(p, normalized, re.I | re.S)
+            if m:
+                found[key] = _decode_fb(m.group(1))
+                break
+
+    # Modern Facebook often embeds large JSON blobs in application/json scripts.
+    for sm in re.finditer(r'<script[^>]+type=["\\\']application/json["\\\'][^>]*>(.*?)</script>', normalized, re.I | re.S):
+        blob = sm.group(1).strip()
+        if not blob or len(blob) > 4_000_000:
+            continue
+        try:
+            obj = json.loads(blob)
+            _fb_extract_fields_from_obj(obj, found)
+        except Exception:
+            pass
+
+    # Last-resort scan for escaped CDN mp4 URLs.
+    generic = re.findall(r'https?:\\?/\\?/[^"\\\'<> ]+?\\.mp4(?:[^"\\\'<> ]*)?', normalized, re.I)
+    generic = [_decode_fb(x) for x in generic if x]
+
+    q = (quality or "Best").lower()
+    hd = (
+        found.get("browser_native_hd_url")
+        or found.get("playable_url_quality_hd")
+        or found.get("hd_src")
+    )
+    sd = (
+        found.get("browser_native_sd_url")
+        or found.get("playable_url")
+        or found.get("sd_src")
+    )
+
+    if q == "sd":
+        chosen = sd or hd
+        height = 480 if sd else 720
+    else:
+        chosen = hd or sd
+        height = 720 if hd else 480
+
+    if not chosen and generic:
+        chosen = generic[0]
+        height = 0
+
+    if not chosen:
+        return None
+
+    tm = re.search(r'<meta[^>]+(?:property|name)=["\\\']og:title["\\\'][^>]+content=["\\\']([^"\\\']+)', normalized, re.I)
+    if not tm:
+        tm = re.search(r'<title[^>]*>(.*?)</title>', normalized, re.I | re.S)
+    title = htmlmod.unescape(tm.group(1)).strip() if tm else "Facebook Reel"
+
+    return {
+        "ok": True,
+        "title": _safe_text(title, 120),
+        "media_url": chosen,
+        "ext": "mp4",
+        "height": height,
+        "thumbnail": "",
+        "headers": {
+            "User-Agent": UA,
+            "Referer": "https://www.facebook.com/",
+        },
+    }
+
+def _facebook_direct(url, quality="Best"):
+    clean = _fb_clean_url(url)
+    vid = _fb_video_id(clean)
+    candidates = [clean]
+
+    if vid:
+        candidates += [
+            f"https://m.facebook.com/watch/?v={vid}",
+            f"https://m.facebook.com/reel/{vid}/",
+            f"https://mbasic.facebook.com/watch/?v={vid}",
+            f"https://www.facebook.com/watch/?v={vid}",
+        ]
+
+    # Try both desktop and iPhone-like mobile headers because the returned
+    # logged-out HTML differs and one often contains progressive URLs.
+    uas = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148",
+    ]
+
+    last_error = ""
+    for page in list(dict.fromkeys(candidates)):
+        for ua in uas:
+            try:
+                req = urllib.request.Request(page, headers={
+                    "User-Agent": ua,
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Cache-Control": "no-cache",
+                    "Pragma": "no-cache",
+                    "Upgrade-Insecure-Requests": "1",
+                    "Sec-Fetch-Mode": "navigate",
+                })
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    body = r.read(6_000_000).decode("utf-8", "ignore")
+                result = _fb_extract_page(body, quality)
+                if result:
+                    result["webpage_url"] = clean
+                    result["source"] = "facebook-fallback"
+                    return result
+            except Exception as e:
+                last_error = _safe_text(e, 160)
+
+    return {
+        "ok": False,
+        "error": "Facebook public page থেকে direct MP4 পাওয়া যায়নি"
+            + ((": " + last_error) if last_error else "")
+    }
+
 def resolve_video(url, quality="Best"):
     try:
+        low = (url or "").lower()
+        if "facebook.com" in low or "fb.watch" in low or "fb.com" in low:
+            fb = _facebook_direct(url, quality)
+            if fb.get("ok"):
+                return json.dumps(fb)
+
         opts = {
             "quiet": True,
             "no_warnings": True,
@@ -142,7 +363,15 @@ def resolve_video(url, quality="Best"):
             "webpage_url": info.get("webpage_url") or url,
         })
     except Exception as e:
-        return json.dumps({"ok": False, "error": _safe_text(e, 240)})
+        msg = _safe_text(e, 240)
+        low = (url or "").lower()
+        if "facebook.com" in low or "fb.watch" in low or "fb.com" in low:
+            fb = _facebook_direct(url, quality)
+            if fb.get("ok"):
+                return json.dumps(fb)
+            if "Cannot parse data" in msg:
+                msg = "Facebook extractor বদলেছে; yt-dlp parse করতে পারেনি এবং fallback-ও direct MP4 পায়নি"
+        return json.dumps({"ok": False, "error": msg})
 
 def _entry_url(entry):
     if not isinstance(entry, dict):
