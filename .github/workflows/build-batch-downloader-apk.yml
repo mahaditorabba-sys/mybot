@@ -20,10 +20,15 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
       - name: Show Android SDK
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          python3.13 --version
           ls -la "$ANDROID_HOME/platforms" | tail -20 || true
           ls -la "$ANDROID_HOME/build-tools" | tail -20 || true
 
@@ -38,6 +43,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Mahadi-Batch-Downloader-APK
+          name: Mahadi-Downloader-v1.3-APK
           path: batch-downloader/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
