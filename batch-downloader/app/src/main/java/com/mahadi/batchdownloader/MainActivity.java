@@ -328,8 +328,20 @@ public class MainActivity extends Activity {
         synchronized (items) {
             copy = new ArrayList<>(items);
         }
+        StringBuilder facebookBatch = new StringBuilder();
         for (VideoItem item : copy) {
-            resolverPool.submit(() -> resolveItem(item, quality, autoDownload));
+            if ("Facebook".equals(item.platform)) {
+                if (facebookBatch.length() > 0) facebookBatch.append("\n");
+                facebookBatch.append(item.pageUrl);
+                resolverPool.submit(() -> resolveItem(item, quality, false));
+            } else {
+                resolverPool.submit(() -> resolveItem(item, quality, autoDownload));
+            }
+        }
+
+        if (autoDownload && facebookBatch.length() > 0) {
+            final String fbUrls = facebookBatch.toString();
+            runOnUiThread(() -> openFacebookDownloader(fbUrls));
         }
     }
 
@@ -355,7 +367,7 @@ public class MainActivity extends Activity {
             setItemState(item, "Browser Ready", "Tap Download — Facebook Browser Mode খুলবে", GREEN, 28);
             runOnUiThread(() -> {
                 item.titleView.setText(item.title);
-                item.downloadButton.setText("OPEN");
+                item.downloadButton.setText("DOWNLOAD");
                 item.downloadButton.setVisibility(View.VISIBLE);
                 item.downloadButton.setEnabled(true);
                 item.retryButton.setVisibility(View.GONE);
@@ -612,10 +624,9 @@ public class MainActivity extends Activity {
         queueContainer.addView(card, lpMatchWrap(dp(8), 0));
     }
 
-    private void openFacebookDownloader(String url) {
-        Intent i = new Intent(this, BrowserActivity.class);
-        i.putExtra("mode", "fdown");
-        i.putExtra("url", url);
+    private void openFacebookDownloader(String urls) {
+        Intent i = new Intent(this, FacebookDownloadActivity.class);
+        i.putExtra("urls", urls);
         startActivity(i);
     }
 
