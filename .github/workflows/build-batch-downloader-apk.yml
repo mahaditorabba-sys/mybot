@@ -1,4 +1,4 @@
-name: Build Mahadi Batch Downloader APK
+name: Build Mahadi Downloader Stable APK
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
@@ -24,25 +25,54 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Show Android SDK
+      - name: Restore or create stable signing key
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          python3.13 --version
-          ls -la "$ANDROID_HOME/platforms" | tail -20 || true
-          ls -la "$ANDROID_HOME/build-tools" | tail -20 || true
+          set -e
+          mkdir -p signing
+          ART_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=Mahadi-Downloader-Signing-Key&per_page=1" --jq '.artifacts[0].id // empty')
+          if [ -n "$ART_ID" ]; then
+            echo "Restoring existing signing key artifact $ART_ID"
+            gh api "repos/${{ github.repository }}/actions/artifacts/$ART_ID/zip" > signing-key.zip
+            unzip -o signing-key.zip -d signing >/dev/null
+          else
+            echo "Creating first stable signing key"
+            PASS=$(openssl rand -hex 24)
+            keytool -genkeypair -v               -keystore signing/mahadi-release.jks               -storepass "$PASS"               -keypass "$PASS"               -alias mahadi               -keyalg RSA               -keysize 3072               -validity 10000               -dname "CN=Mahadi Downloader, OU=Mahadi, O=Mahadi, L=Muscat, C=OM"
+            printf '%s' "$PASS" > signing/password.txt
+          fi
+          test -f signing/mahadi-release.jks
+          test -f signing/password.txt
+          PASS=$(cat signing/password.txt)
+          echo "MAHADI_KEYSTORE_FILE=$GITHUB_WORKSPACE/signing/mahadi-release.jks" >> "$GITHUB_ENV"
+          echo "MAHADI_STORE_PASS=$PASS" >> "$GITHUB_ENV"
+          echo "MAHADI_KEY_PASS=$PASS" >> "$GITHUB_ENV"
+          echo "MAHADI_KEY_ALIAS=mahadi" >> "$GITHUB_ENV"
+
+      - name: Preserve signing key for future updates
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mahadi-Downloader-Signing-Key
+          path: signing/
+          retention-days: 90
 
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
 
-      - name: Build debug APK
+      - name: Build signed release APK
         working-directory: batch-downloader
-        run: gradle --no-daemon :app:assembleDebug --stacktrace
+        run: gradle --no-daemon :app:assembleRelease --stacktrace
+
+      - name: Verify APK signature
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --verbose --print-certs batch-downloader/app/build/outputs/apk/release/app-release.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Mahadi-Downloader-v2.0-APK
-          path: batch-downloader/app/build/outputs/apk/debug/app-debug.apk
+          name: Mahadi-Downloader-v2.2-Stable-APK
+          path: batch-downloader/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
