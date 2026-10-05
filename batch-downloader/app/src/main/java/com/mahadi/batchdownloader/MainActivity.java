@@ -140,7 +140,15 @@ public class MainActivity extends Activity {
 
         paste.setOnClickListener(v -> pasteClipboard());
         clear.setOnClickListener(v -> clearAll());
-        analyze.setOnClickListener(v -> analyzeLinks(false));
+        analyze.setOnClickListener(v -> {
+            String raw = linkInput.getText().toString().trim();
+            List<String> links = parseLinks(raw);
+            if (links.size() == 1 && looksLikeProfileUrl(links.get(0))) {
+                loadProfilePosts(links.get(0));
+            } else {
+                analyzeLinks(false);
+            }
+        });
 
         LinearLayout settingsCard = verticalCard();
         settingsCard.addView(text("DOWNLOAD SETTINGS", 13, Color.WHITE, true));
@@ -170,7 +178,15 @@ public class MainActivity extends Activity {
         Button downloadAll = button("DOWNLOAD ALL", ACCENT, Color.BLACK);
         downloadAll.setTextSize(16);
         downloadAll.setTypeface(Typeface.DEFAULT_BOLD);
-        downloadAll.setOnClickListener(v -> analyzeLinks(true));
+        downloadAll.setOnClickListener(v -> {
+            String raw = linkInput.getText().toString().trim();
+            List<String> links = parseLinks(raw);
+            if (links.size() == 1 && looksLikeProfileUrl(links.get(0))) {
+                loadProfilePosts(links.get(0));
+            } else {
+                analyzeLinks(true);
+            }
+        });
         root.addView(downloadAll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(58)));
 
         summaryText = text("Queue empty", 13, MUTED, false);
@@ -244,6 +260,122 @@ public class MainActivity extends Activity {
         synchronized (items) { items.clear(); }
         queueContainer.removeAllViews();
         updateSummary();
+    }
+
+    private boolean looksLikeProfileUrl(String url) {
+        try {
+            Uri u = Uri.parse(url);
+            String host = u.getHost() == null ? "" : u.getHost().toLowerCase(Locale.ROOT);
+            String path = u.getPath() == null ? "" : u.getPath();
+            if (host.contains("tiktok.com")) {
+                return path.matches("/@[^/]+/?") || (!path.contains("/video/") && path.startsWith("/@"));
+            }
+            if (host.contains("instagram.com")) {
+                return !(path.contains("/reel/") || path.contains("/reels/") || path.contains("/p/") || path.contains("/tv/"));
+            }
+            if (host.contains("facebook.com") || host.contains("fb.com")) {
+                return !(path.contains("/reel/") || path.contains("/watch/") || path.contains("/videos/"));
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    private void loadProfilePosts(String profileUrl) {
+        synchronized (items) { items.clear(); }
+        runOnUiThread(() -> {
+            queueContainer.removeAllViews();
+            summaryText.setText("Profile scan হচ্ছে…");
+        });
+
+        resolverPool.submit(() -> {
+            try {
+                HttpURLConnection conn = open(profileUrl, "GET");
+                int code = conn.getResponseCode();
+                if (code == 401 || code == 403) throw new Exception("Profile login/private হতে পারে (HTTP " + code + ")");
+                if (code >= 400) throw new Exception("Profile open failed (HTTP " + code + ")");
+                String html = readLimited(conn.getInputStream(), 6_000_000);
+                String finalUrl = conn.getURL().toString();
+                conn.disconnect();
+
+                List<String> posts = extractProfilePostUrls(finalUrl, html);
+                if (posts.isEmpty()) {
+                    if (containsLoginWall(html)) throw new Exception("Private/login-required profile — bypass করা হয়নি");
+                    throw new Exception("Public Reels/Video list পাওয়া যায়নি। Platform page format বদলাতে পারে।");
+                }
+
+                synchronized (items) {
+                    items.clear();
+                    int i = 1;
+                    for (String post : posts) {
+                        if (i > 60) break;
+                        VideoItem item = new VideoItem(post);
+                        item.status = "Profile item";
+                        item.profileIndex = i++;
+                        items.add(item);
+                    }
+                }
+
+                runOnUiThread(() -> {
+                    queueContainer.removeAllViews();
+                    List<VideoItem> copy;
+                    synchronized (items) { copy = new ArrayList<>(items); }
+                    for (VideoItem item : copy) {
+                        addItemRow(item);
+                        item.statusView.setText("#" + item.profileIndex);
+                        item.statusView.setTextColor(ACCENT);
+                        item.detailView.setText("Tap Download to resolve this Reel/Video");
+                        item.downloadButton.setVisibility(View.VISIBLE);
+                        item.downloadButton.setEnabled(true);
+                    }
+                    summaryText.setText("Profile থেকে " + items.size() + "টা public Reel/Video পাওয়া গেছে");
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    queueContainer.removeAllViews();
+                    summaryText.setText("Profile scan failed");
+                    TextView error = text(cleanError(e.getMessage()), 13, Color.rgb(255, 105, 105), false);
+                    error.setPadding(dp(12), dp(12), dp(12), dp(12));
+                    error.setBackground(roundRect(CARD, 12));
+                    queueContainer.addView(error, lpMatchWrap(dp(8), 0));
+                });
+            }
+        });
+    }
+
+    private List<String> extractProfilePostUrls(String profileUrl, String html) {
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        String lower = profileUrl.toLowerCase(Locale.ROOT);
+
+        if (lower.contains("tiktok.com")) {
+            Matcher m = Pattern.compile("(?is)(?:https?:\\\\?/\\\\?/[^\\\"'<> ]*tiktok\\.com)?\\\\?/(@[^/\\\"'<> ]+/video/\\d+)").matcher(html);
+            while (m.find()) {
+                String p = normalizeEscapedUrl(m.group(1));
+                if (!p.startsWith("http")) p = "https://www.tiktok.com/" + p.replaceFirst("^/+", "");
+                out.add(p);
+            }
+            Matcher ids = Pattern.compile("(?is)[\\\"']id[\\\"']\\s*:\\s*[\\\"'](\\d{12,24})[\\\"']").matcher(html);
+            String username = null;
+            Matcher um = Pattern.compile("tiktok\\.com/@([^/?#]+)", Pattern.CASE_INSENSITIVE).matcher(profileUrl);
+            if (um.find()) username = um.group(1);
+            if (username != null) {
+                int n = 0;
+                while (ids.find() && n++ < 80) out.add("https://www.tiktok.com/@" + username + "/video/" + ids.group(1));
+            }
+        } else if (lower.contains("instagram.com")) {
+            Matcher m = Pattern.compile("(?is)(?:https?:\\\\?/\\\\?/[^\\\"'<> ]*instagram\\.com)?\\\\?/(reel|reels|p)/([A-Za-z0-9_-]{5,})").matcher(html);
+            while (m.find()) {
+                String type = "reels".equals(m.group(1)) ? "reel" : m.group(1);
+                out.add("https://www.instagram.com/" + type + "/" + m.group(2) + "/");
+            }
+            Matcher href = Pattern.compile("(?is)href=[\\\"'](/(?:reel|reels|p)/[^\\\"'#?]+)").matcher(html);
+            while (href.find()) out.add("https://www.instagram.com" + href.group(1));
+        } else if (lower.contains("facebook.com") || lower.contains("fb.com")) {
+            Matcher m = Pattern.compile("(?is)(https?:\\\\?/\\\\?/(?:www\\.)?facebook\\.com/[^\\\"'<> ]+/(?:reel|videos?)/[^\\\"'<> ]+)").matcher(html);
+            while (m.find()) out.add(normalizeEscapedUrl(m.group(1)));
+            Matcher rel = Pattern.compile("(?is)href=[\\\"'](/[^\\\"']*/(?:reel|videos?)/[^\\\"'#?]+)").matcher(html);
+            while (rel.find()) out.add("https://www.facebook.com" + rel.group(1));
+        }
+        return new ArrayList<>(out);
     }
 
     private void analyzeLinks(boolean downloadAfterResolve) {
@@ -323,23 +455,36 @@ public class MainActivity extends Activity {
 
         LinearLayout actions = horizontal();
         item.retryButton = button("Retry", Color.rgb(40, 45, 56), Color.WHITE);
+        item.downloadButton = button("Download", ACCENT, Color.BLACK);
         Button remove = button("Remove", Color.rgb(40, 45, 56), Color.rgb(255, 145, 145));
         item.retryButton.setVisibility(View.GONE);
+        item.downloadButton.setVisibility(View.GONE);
         item.retryButton.setOnClickListener(v -> {
             item.error = null;
             item.mediaUrl = null;
             item.downloadId = -1;
             setStatus(item, "Queued", "Retrying…", MUTED, 0);
             item.retryButton.setVisibility(View.GONE);
+            item.downloadButton.setVisibility(View.GONE);
             String quality = String.valueOf(qualitySpinner.getSelectedItem());
             resolverPool.submit(() -> resolveItem(item, quality, true));
+        });
+        item.downloadButton.setOnClickListener(v -> {
+            item.downloadButton.setEnabled(false);
+            if (item.mediaUrl != null && !item.mediaUrl.isEmpty()) {
+                enqueueDownload(item);
+            } else {
+                String quality = String.valueOf(qualitySpinner.getSelectedItem());
+                resolverPool.submit(() -> resolveItem(item, quality, true));
+            }
         });
         remove.setOnClickListener(v -> {
             synchronized (items) { items.remove(item); }
             queueContainer.removeView(item.card);
             updateSummary();
         });
-        actions.addView(item.retryButton, weight(1, dp(10)));
+        actions.addView(item.retryButton, weight(1, dp(8)));
+        actions.addView(item.downloadButton, weight(1, dp(8)));
         actions.addView(remove, weight(1, 0));
         card.addView(actions, lpMatchWrap(dp(10), 0));
 
@@ -353,6 +498,10 @@ public class MainActivity extends Activity {
             item.mediaUrl = result.mediaUrl;
             item.title = result.title;
             setStatus(item, "Ready", result.detail, ACCENT, 28);
+            runOnUiThread(() -> {
+                item.downloadButton.setVisibility(View.VISIBLE);
+                item.downloadButton.setEnabled(true);
+            });
             if (autoDownload) enqueueDownload(item);
         } catch (Exception e) {
             String msg = cleanError(e.getMessage());
@@ -582,7 +731,10 @@ public class MainActivity extends Activity {
                     if (status == DownloadManager.STATUS_SUCCESSFUL) {
                         item.downloadId = -2;
                         setStatus(item, "Completed", "Saved in Downloads/Mahadi Downloader", ACCENT, 100);
-                        runOnUiThread(() -> item.retryButton.setVisibility(View.GONE));
+                        runOnUiThread(() -> {
+                            item.retryButton.setVisibility(View.GONE);
+                            item.downloadButton.setVisibility(View.GONE);
+                        });
                         addHistory("DONE", item.platform + " • " + (item.title == null ? "video" : shorten(item.title, 45)));
                     } else if (status == DownloadManager.STATUS_FAILED) {
                         int reason = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON));
@@ -796,12 +948,14 @@ public class MainActivity extends Activity {
         String title;
         String error;
         long downloadId = -1;
+        int profileIndex = 0;
         LinearLayout card;
         TextView platformView;
         TextView statusView;
         TextView detailView;
         ProgressBar progress;
         Button retryButton;
+        Button downloadButton;
 
         VideoItem(String url) {
             this.pageUrl = url;
