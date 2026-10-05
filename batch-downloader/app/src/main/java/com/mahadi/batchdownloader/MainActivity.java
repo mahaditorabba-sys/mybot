@@ -6,6 +6,7 @@ import android.app.DownloadManager;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
@@ -169,7 +170,7 @@ public class MainActivity extends Activity {
         root.addView(hero, lpMatchWrap(0, dp(14)));
 
         TextView subtitle = text(
-                "TikTok • Facebook • Instagram\nBatch video download + public profile scanner",
+                "TikTok • Facebook • Instagram\nFacebook Browser Mode + batch downloader",
                 13, MUTED, false);
         subtitle.setPadding(dp(4), 0, dp(4), dp(14));
         root.addView(subtitle);
@@ -223,13 +224,13 @@ public class MainActivity extends Activity {
 
         LinearLayout profileActions = horizontal();
         Button pasteProfile = ghostButton("PASTE PROFILE");
-        Button scanProfile = greenButton("SCAN PROFILE");
+        Button scanProfile = greenButton("OPEN PROFILE");
         profileActions.addView(pasteProfile, weight(1, dp(8), dp(46)));
         profileActions.addView(scanProfile, weight(1, 0, dp(46)));
         profileCard.addView(profileActions, lpMatchWrap(dp(10), 0));
 
         TextView profileHint = text(
-                "Public profile হলে Reels/Video serially দেখাবে। Private/login-required content bypass করবে না।",
+                "Facebook profile app-এর ভিতর browser-এ খুলবে। Reel খুলে DOWNLOAD THIS REEL চাপুন।",
                 11, MUTED, false);
         profileHint.setPadding(0, dp(10), 0, 0);
         profileCard.addView(profileHint);
@@ -335,71 +336,34 @@ public class MainActivity extends Activity {
     private void scanProfile() {
         String url = firstLink(profileInput.getText().toString());
         if (url.isEmpty()) {
-            toast("Profile link দিন");
+            toast("Facebook profile link দিন");
             return;
         }
-
-        clearQueue();
-        summary("Profile scan হচ্ছে…");
-
-        resolverPool.submit(() -> {
-            try {
-                PyObject module = getResolver();
-                String raw = module.callAttr("scan_profile", url).toString();
-                JSONObject obj = new JSONObject(raw);
-                if (!obj.optBoolean("ok")) {
-                    throw new Exception(obj.optString("error", "Profile scan failed"));
-                }
-
-                JSONArray entries = obj.optJSONArray("entries");
-                if (entries == null || entries.length() == 0) {
-                    throw new Exception("Public Reel/Video পাওয়া যায়নি");
-                }
-
-                List<VideoItem> profileItems = new ArrayList<>();
-                for (int i = 0; i < entries.length() && i < 60; i++) {
-                    JSONObject e = entries.optJSONObject(i);
-                    if (e == null) continue;
-                    String pageUrl = e.optString("url");
-                    if (pageUrl.isEmpty()) continue;
-                    VideoItem item = new VideoItem(pageUrl, i + 1);
-                    item.title = e.optString("title", "Video " + (i + 1));
-                    item.status = "Profile item";
-                    profileItems.add(item);
-                }
-
-                synchronized (items) {
-                    items.clear();
-                    items.addAll(profileItems);
-                }
-
-                runOnUiThread(() -> {
-                    queueContainer.removeAllViews();
-                    for (VideoItem item : profileItems) {
-                        addItemRow(item);
-                        item.statusView.setText("#" + item.profileIndex);
-                        item.statusView.setTextColor(GREEN);
-                        item.titleView.setText(item.title);
-                        item.detailView.setText("Tap Download to resolve this Reel/Video");
-                        item.downloadButton.setVisibility(View.VISIBLE);
-                    }
-                    summaryText.setText(profileItems.size() + " public Reel/Video found");
-                });
-            } catch (Exception e) {
-                String msg = cleanError(e.getMessage());
-                runOnUiThread(() -> {
-                    queueContainer.removeAllViews();
-                    summaryText.setText("Profile scan failed");
-                    TextView error = text(msg, 13, ERROR, false);
-                    error.setPadding(dp(13), dp(12), dp(13), dp(12));
-                    error.setBackground(roundStroke(Color.rgb(32, 15, 18), Color.rgb(105, 36, 43), 14, 1));
-                    queueContainer.addView(error, lpMatchWrap(dp(8), 0));
-                });
-            }
-        });
+        if (!platformOf(url).equals("Facebook")) {
+            toast("Profile Browser এখন Facebook-এর জন্য");
+            return;
+        }
+        Intent i = new Intent(this, BrowserActivity.class);
+        i.putExtra("mode", "profile");
+        i.putExtra("url", url);
+        startActivity(i);
     }
 
     private void resolveItem(VideoItem item, String quality, boolean autoDownload) {
+        if ("Facebook".equals(item.platform)) {
+            item.title = "Facebook Video / Reel";
+            setItemState(item, "Browser Ready", "Tap Download — Facebook Browser Mode খুলবে", GREEN, 28);
+            runOnUiThread(() -> {
+                item.titleView.setText(item.title);
+                item.downloadButton.setText("OPEN");
+                item.downloadButton.setVisibility(View.VISIBLE);
+                item.downloadButton.setEnabled(true);
+                item.retryButton.setVisibility(View.GONE);
+            });
+            updateSummary();
+            return;
+        }
+
         setItemState(item, "Resolving", "yt-dlp engine analyzing…", WARN, 12);
         try {
             PyObject module = getResolver();
@@ -615,11 +579,19 @@ public class MainActivity extends Activity {
             item.mediaUrl = null;
             item.downloadId = -1;
             item.retryButton.setVisibility(View.GONE);
-            String quality = String.valueOf(qualitySpinner.getSelectedItem());
-            resolverPool.submit(() -> resolveItem(item, quality, true));
+            if ("Facebook".equals(item.platform)) {
+                openFacebookDownloader(item.pageUrl);
+            } else {
+                String quality = String.valueOf(qualitySpinner.getSelectedItem());
+                resolverPool.submit(() -> resolveItem(item, quality, true));
+            }
         });
 
         item.downloadButton.setOnClickListener(v -> {
+            if ("Facebook".equals(item.platform)) {
+                openFacebookDownloader(item.pageUrl);
+                return;
+            }
             item.downloadButton.setEnabled(false);
             if (item.mediaUrl != null && !item.mediaUrl.isEmpty()) {
                 enqueueDownload(item);
@@ -638,6 +610,13 @@ public class MainActivity extends Activity {
         });
 
         queueContainer.addView(card, lpMatchWrap(dp(8), 0));
+    }
+
+    private void openFacebookDownloader(String url) {
+        Intent i = new Intent(this, BrowserActivity.class);
+        i.putExtra("mode", "fdown");
+        i.putExtra("url", url);
+        startActivity(i);
     }
 
     private void setItemState(VideoItem item, String status, String detail, int color, int progress) {
@@ -659,7 +638,7 @@ public class MainActivity extends Activity {
                 for (VideoItem item : items) {
                     String s = item.status == null ? "Queued" : item.status;
                     if (s.equals("Queued") || s.equals("Resolving") || s.equals("Profile item")) queued++;
-                    else if (s.equals("Ready")) ready++;
+                    else if (s.equals("Ready") || s.equals("Browser Ready")) ready++;
                     else if (s.equals("Downloading") || s.equals("Paused")) downloading++;
                     else if (s.equals("Completed")) done++;
                     else if (s.equals("Failed")) failed++;
