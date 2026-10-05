@@ -32,6 +32,10 @@ jobs:
           ls -la "$ANDROID_HOME/platforms" | tail -20 || true
           ls -la "$ANDROID_HOME/build-tools" | tail -20 || true
 
+      - name: Test FDOWN exact Facebook Reel
+        working-directory: batch-downloader
+        run: python3.13 tools/test_fdown.py
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
