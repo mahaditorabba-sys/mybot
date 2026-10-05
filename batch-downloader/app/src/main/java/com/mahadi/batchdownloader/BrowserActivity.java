@@ -63,18 +63,10 @@ public class BrowserActivity extends Activity {
         buildUi();
         configureWebView();
 
-        if ("profile".equals(mode)) {
-            title.setText("FACEBOOK PROFILE BROWSER");
-            hint.setText("Profile খুলুন → যে Reel চাই সেটায় tap করুন → নিচের button চাপুন");
-            action.setText("DOWNLOAD CURRENT REEL");
-            webView.loadUrl(targetUrl.isEmpty() ? "https://m.facebook.com/" : targetUrl);
-        } else {
-            title.setText("FACEBOOK DOWNLOADER");
-            hint.setText("Link ready. FDOWN page load হলে Download চাপুন");
-            action.setText("REFILL LINK");
-            copyTarget();
-            webView.loadUrl("https://fdown.net/");
-        }
+        title.setText("FACEBOOK PROFILE BROWSER");
+        hint.setText("Profile খুলুন → Reel tap করুন → নিচের button চাপুন");
+        action.setText("DOWNLOAD CURRENT REEL");
+        webView.loadUrl(targetUrl.isEmpty() ? "https://m.facebook.com/" : targetUrl);
     }
 
     private void buildUi() {
@@ -128,22 +120,19 @@ public class BrowserActivity extends Activity {
         });
 
         action.setOnClickListener(v -> {
-            if ("profile".equals(mode)) {
-                String current = webView.getUrl();
+            webView.evaluateJavascript("(function(){return location.href;})()", raw -> {
+                String current = decodeJsString(raw);
+                if (!isFacebookVideoUrl(current)) {
+                    current = webView.getUrl();
+                }
                 if (isFacebookVideoUrl(current)) {
-                    Intent i = new Intent(this, BrowserActivity.class);
-                    i.putExtra("mode", "fdown");
+                    Intent i = new Intent(this, FacebookDownloadActivity.class);
                     i.putExtra("url", current);
                     startActivity(i);
                 } else {
                     toast("আগে Facebook profile থেকে একটি Reel/Video খুলুন");
                 }
-            } else {
-                attemptedPrefill = false;
-                copyTarget();
-                prefillFdown();
-                toast("Link আবার বসানো হয়েছে");
-            }
+            });
         });
     }
 
@@ -194,18 +183,16 @@ public class BrowserActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                if ("fdown".equals(mode) && url != null && url.contains("fdown.net")) {
-                    prefillFdown();
-                }
-                if ("profile".equals(mode)) {
-                    if (isFacebookVideoUrl(url)) {
+                view.evaluateJavascript("(function(){return location.href;})()", raw -> {
+                    String current = decodeJsString(raw);
+                    if (isFacebookVideoUrl(current) || isFacebookVideoUrl(url)) {
                         action.setText("DOWNLOAD THIS REEL");
                         hint.setText("Reel selected ✓");
                     } else {
                         action.setText("DOWNLOAD CURRENT REEL");
                         hint.setText("Profile খুলুন → Reel tap করুন → নিচের button চাপুন");
                     }
-                }
+                });
             }
         });
 
@@ -272,6 +259,16 @@ public class BrowserActivity extends Activity {
                 && (u.contains("/reel/") || u.contains("/videos/")
                 || u.contains("/watch") || u.contains("/share/r/")
                 || u.contains("/share/v/"));
+    }
+
+    private String decodeJsString(String raw) {
+        if (raw == null || "null".equals(raw)) return "";
+        try {
+            org.json.JSONArray a = new org.json.JSONArray("[" + raw + "]");
+            return a.getString(0);
+        } catch (Exception e) {
+            return raw.replace("\\"", "\"").replace("\\\\", "\\");
+        }
     }
 
     @Override
