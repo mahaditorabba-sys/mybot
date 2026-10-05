@@ -5,8 +5,11 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
+        android:name="com.chaquo.python.android.PyApplication"
         android:allowBackup="true"
-        android:label="Mahadi Batch Downloader"
+        android:label="Mahadi Downloader"
+        android:icon="@drawable/ic_mbd_logo"
+        android:roundIcon="@drawable/ic_mbd_logo"
         android:usesCleartextTraffic="false"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <activity
